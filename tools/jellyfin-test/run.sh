@@ -29,7 +29,10 @@ cleanup() {
         echo "Jellyfin keeps running at $SERVER (user david, password test); remove it with: docker rm -f $NAME"
     else
         docker rm -f "$NAME" >/dev/null 2>&1 || true
-        rm -rf "$WORK"
+        # The server's files belong to its own user: it removes them itself.
+        docker run --rm -v "$WORK:/work" --entrypoint rm "$IMAGE" -rf /work/config /work/cache \
+            >/dev/null 2>&1 || true
+        rm -rf "$WORK" || true
     fi
 }
 trap cleanup EXIT
@@ -99,6 +102,18 @@ for _ in $(seq 1 60); do
     sleep 2
 done
 [ "$songs" -ge 5 ] || { echo "the library scan found $songs of 5 songs" >&2; exit 1; }
+# Songs appear before the scan has filled in their albums: wait for the
+# scan to finish and both albums to name their artist.
+ready=0
+for _ in $(seq 1 60); do
+    scanning=$(api GET /ScheduledTasks "" "$TOKEN" |
+        python3 -c 'import json,sys; print(any(t.get("Key")=="RefreshLibrary" and t.get("State")!="Idle" for t in json.load(sys.stdin)))')
+    albums=$(api GET "/Items?Recursive=true&IncludeItemTypes=MusicAlbum" "" "$TOKEN" |
+        python3 -c 'import json,sys; print(sum(1 for i in json.load(sys.stdin)["Items"] if i.get("AlbumArtist")))')
+    if [ "$scanning" = False ] && [ "$albums" -ge 2 ]; then ready=1; break; fi
+    sleep 2
+done
+[ "$ready" = 1 ] || { echo "the library scan didn't finish" >&2; exit 1; }
 echo "$songs songs scanned"
 
 echo "== Reborn's client"
