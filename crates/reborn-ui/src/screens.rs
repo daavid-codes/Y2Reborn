@@ -221,6 +221,9 @@ fn layout_keys(m: &AppModel, page: Option<&Page>, empty: bool) -> &'static [&'st
         Screen::Spotify => keys!("spotify"),
         Screen::SpotifyList => keys!("spotify_list"),
         Screen::Jellyfin => keys!("jellyfin"),
+        Screen::Stats => keys!("stats"),
+        Screen::StatsList => keys!("stats_list"),
+        Screen::StatsRecap => keys!("stats_recap"),
         Screen::JellyfinList => keys!("jellyfin_list"),
         Screen::SettingsPlayback => keys!("playback"),
         Screen::Crossfade => keys!("crossfade"),
@@ -774,6 +777,14 @@ pub fn screen_title(m: &AppModel) -> String {
             crate::service_filter(&m.navigation.filter).1.into()
         }
         Screen::Jellyfin => "Jellyfin".into(),
+        Screen::Stats => "Stats".into(),
+        Screen::StatsList => match m.navigation.filter.split(':').next().unwrap_or("") {
+            "artists" => "Top Artists".into(),
+            "albums" => "Top Albums".into(),
+            "songs" => "Top Songs".into(),
+            _ => "When You Listen".into(),
+        },
+        Screen::StatsRecap => format!("Your {}", m.navigation.filter),
         Screen::Equalizer => "Equalizer".into(),
         Screen::SettingsPlayback => "Playback".into(),
         Screen::Crossfade => "Crossfade".into(),

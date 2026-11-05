@@ -201,6 +201,9 @@ pub fn page(ui: &Ui, m: &AppModel, tracks: &[Track]) -> Page {
         Screen::Spotify => spotify(ui),
         Screen::SpotifyList => spotify_list(ui, m),
         Screen::Jellyfin => jellyfin(ui),
+        Screen::Stats => stats(ui, m),
+        Screen::StatsList => stats_list(ui, m),
+        Screen::StatsRecap => stats_recap(ui, m),
         Screen::JellyfinList => jellyfin_list(ui, m),
         Screen::Equalizer => equalizer(ui, m),
         Screen::Crossfade => crossfade(m),
@@ -486,6 +489,263 @@ fn spotify(ui: &Ui) -> Page {
     ]);
     let mut page = Page::rows(rows);
     page.status = s.problem.clone();
+    page
+}
+
+/// "9 PM" or "21:00", as the player's clock reads.
+fn hour_label(m: &AppModel, hour: usize) -> String {
+    if reborn_core::clock::twelve_hour(&m.settings.time_zone) {
+        let h = match hour % 12 {
+            0 => 12,
+            h => h,
+        };
+        format!("{h} {}", if hour < 12 { "AM" } else { "PM" })
+    } else {
+        format!("{hour:02}:00")
+    }
+}
+
+const MONTHS: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+
+fn days(n: usize) -> String {
+    crate::components::count(n, "day", "days")
+}
+
+/// The keep/reset rows every Stats page ends with.
+fn stats_settings(m: &AppModel, rows: &mut Vec<Item>) {
+    rows.push(
+        row("Keep Listening Stats", "stats_keep", "")
+            .with_kind(RowKind::Toggle(m.settings.listening_stats)),
+    );
+    rows.push(row("Reset Listening Stats", "confirm:reset_stats", ""));
+}
+
+/// Stats: a period's minutes and favourites, its rankings, and each
+/// finished year's recap.
+fn stats(ui: &Ui, m: &AppModel) -> Page {
+    use reborn_core::stats::duration_text;
+    let st = &ui.stats;
+    let period = st.period;
+    let summary = st.summary(period).cloned().unwrap_or_default();
+    let mut rows = vec![row("Period", "stats_period", period.label())];
+    if st.listens > 0 && !st.ready {
+        let mut page = Page::hero(
+            "Adding Up…",
+            "Your stats appear once the player's clock is set (Wi-Fi, or Settings › Display › Date & Time).",
+        );
+        stats_settings(m, &mut page.rows);
+        return page;
+    }
+    let mut page = if st.listens == 0 {
+        let mut page = Page::hero(
+            "No Listening Yet",
+            if m.settings.listening_stats {
+                "Play some music: what you hear adds up here. Songs from the player, Jellyfin and Spotify count."
+            } else {
+                "Listening stats are off. Turn them on to see what you listen to most."
+            },
+        );
+        rows.clear();
+        stats_settings(m, &mut rows);
+        page.rows = rows;
+        return page;
+    } else {
+        Page::default()
+    };
+    page = page.fact("Listened", duration_text(summary.ms));
+    if summary.plays > 0 || summary.ms > 0 {
+        page = page.fact(
+            "Plays",
+            format!(
+                "{} · {}",
+                crate::components::count(summary.plays as usize, "play", "plays"),
+                crate::components::count(summary.artists, "artist", "artists")
+            ),
+        );
+    }
+    if let Some(top) = summary.top_artists.first() {
+        page = page.fact(
+            "Top Artist",
+            format!("{} · {}", top.name, duration_text(top.ms)),
+        );
+    }
+    page = page.fact(
+        "In a Row",
+        match (summary.current_streak, summary.longest_streak) {
+            (0, 0) => "No listening yet".to_owned(),
+            (0, longest) => format!("Longest {}", days(longest)),
+            (now, longest) if now == longest => days(now),
+            (now, longest) => format!("{} · longest {}", days(now), days(longest)),
+        },
+    );
+    rows.extend([
+        row(
+            "Top Artists",
+            "stats_list:artists",
+            summary
+                .top_artists
+                .first()
+                .map(|r| r.name.clone())
+                .unwrap_or_default(),
+        )
+        .with_kind(RowKind::Chevron),
+        row(
+            "Top Albums",
+            "stats_list:albums",
+            summary
+                .top_albums
+                .first()
+                .map(|r| r.name.clone())
+                .unwrap_or_default(),
+        )
+        .with_kind(RowKind::Chevron),
+        row(
+            "Top Songs",
+            "stats_list:songs",
+            summary
+                .top_songs
+                .first()
+                .map(|r| r.name.clone())
+                .unwrap_or_default(),
+        )
+        .with_kind(RowKind::Chevron),
+        row(
+            "When You Listen",
+            "stats_list:hours",
+            summary
+                .busiest_hour()
+                .map(|h| format!("Most around {}", hour_label(m, h)))
+                .unwrap_or_default(),
+        )
+        .with_kind(RowKind::Chevron),
+    ]);
+    rows.extend(st.years.iter().map(|year| {
+        let total = st
+            .summary(reborn_core::stats::Period::Recap(*year))
+            .map(|s| duration_text(s.ms))
+            .unwrap_or_default();
+        row(
+            &format!("Your {year}"),
+            &format!("stats_recap:{year}"),
+            total,
+        )
+        .with_kind(RowKind::Chevron)
+    }));
+    stats_settings(m, &mut rows);
+    page.rows = rows;
+    page
+}
+
+/// One ranking: top artists, albums or songs, or the hours of the day.
+fn stats_list(ui: &Ui, m: &AppModel) -> Page {
+    use reborn_core::stats::duration_text;
+    let (kind, period) = crate::stats_list(ui, &m.navigation.filter);
+    let summary = ui.stats.summary(period).cloned().unwrap_or_default();
+    let ranked = |list: &[reborn_core::stats::Ranked]| -> Vec<Item> {
+        list.iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let heard = duration_text(r.ms);
+                let plays = crate::components::count(r.plays as usize, "play", "plays");
+                let detail = if r.by.is_empty() {
+                    format!("{heard} · {plays}")
+                } else {
+                    format!("{} · {heard}", r.by)
+                };
+                row(
+                    &format!("{}. {}", i + 1, r.name),
+                    &format!("stats_rank:{i}"),
+                    detail,
+                )
+            })
+            .collect()
+    };
+    let rows = match kind.as_str() {
+        "artists" => ranked(&summary.top_artists),
+        "albums" => ranked(&summary.top_albums),
+        "songs" => ranked(&summary.top_songs),
+        _ => (0..24)
+            .filter(|&h| summary.hours[h] > 0)
+            .map(|h| {
+                row(
+                    &format!("{} – {}", hour_label(m, h), hour_label(m, (h + 1) % 24)),
+                    &format!("stats_hour:{h}"),
+                    duration_text(summary.hours[h]),
+                )
+            })
+            .collect(),
+    };
+    if rows.is_empty() {
+        let mut page = Page::hero("Nothing Here Yet", "Nothing was heard in this period.");
+        page.status = Some(period.label());
+        return page;
+    }
+    let mut page = Page::rows(rows);
+    page.status = Some(period.label());
+    page
+}
+
+/// One finished year: its minutes, favourites, busiest month and streak.
+fn stats_recap(ui: &Ui, m: &AppModel) -> Page {
+    use reborn_core::stats::duration_text;
+    let Ok(year) = m.navigation.filter.parse::<i32>() else {
+        return Page::hero("No Recap", "Choose a year on the Stats page.");
+    };
+    let period = reborn_core::stats::Period::Recap(year);
+    let Some(s) = ui.stats.summary(period) else {
+        return Page::hero("Adding Up…", "Your year is being counted.");
+    };
+    let top = |list: &[reborn_core::stats::Ranked]| {
+        list.first()
+            .map(|r| r.name.clone())
+            .unwrap_or_else(|| "—".into())
+    };
+    let mut page = Page::default()
+        .fact("Listened", duration_text(s.ms))
+        .fact("Top Artist", top(&s.top_artists))
+        .fact("Top Song", top(&s.top_songs))
+        .fact(
+            "Busiest Month",
+            s.busiest_month()
+                .map(|i| MONTHS[i].to_owned())
+                .unwrap_or_else(|| "—".into()),
+        );
+    page.rows = vec![
+        row("Top Artists", &format!("stats_list:artists:{year}"), "").with_kind(RowKind::Chevron),
+        row(
+            "Top Albums",
+            &format!("stats_list:albums:{year}"),
+            top(&s.top_albums),
+        )
+        .with_kind(RowKind::Chevron),
+        row("Top Songs", &format!("stats_list:songs:{year}"), "").with_kind(RowKind::Chevron),
+        row("When You Listen", &format!("stats_list:hours:{year}"), "").with_kind(RowKind::Chevron),
+        row(
+            "Plays",
+            "stats_info",
+            format!(
+                "{} · {} · {}",
+                crate::components::count(s.plays as usize, "play", "plays"),
+                crate::components::count(s.artists, "artist", "artists"),
+                crate::components::count(s.songs, "song", "songs")
+            ),
+        ),
+        row("Most Days in a Row", "stats_info", days(s.longest_streak)),
+        row("Days You Listened", "stats_info", days(s.days)),
+    ];
     page
 }
 

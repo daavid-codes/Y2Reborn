@@ -324,6 +324,7 @@ fn pinned_music_lists_stand_after_music_on_home() {
             "Playlists",
             "Radio",
             "Jellyfin",
+            "Stats",
             "Search",
             "Settings"
         ]
@@ -364,6 +365,7 @@ fn home_menu_switches_pin_and_unpin_from_customize() {
             "home_show:playlists",
             "home_show:radio",
             "home_show:jellyfin",
+            "home_show:stats",
             "home_show:search"
         ]
     );
@@ -416,6 +418,7 @@ fn home_places_can_be_hidden_but_now_playing_and_settings_stay() {
         "playlists",
         "radio",
         "jellyfin",
+        "stats",
         "search",
         "now_playing",
         "settings",
@@ -423,11 +426,11 @@ fn home_places_can_be_hidden_but_now_playing_and_settings_stay() {
         m.settings.show_on_home(key, false);
     }
     assert_eq!(keys(&m), ["now_playing", "settings"]);
-    assert_eq!(summary(&mut m), "5 hidden");
+    assert_eq!(summary(&mut m), "6 hidden");
     // Pinned lists still stand on Home without Music.
     m.settings.pin_home("albums", true);
     assert_eq!(keys(&m), ["now_playing", "albums", "settings"]);
-    assert_eq!(summary(&mut m), "1 added, 5 hidden");
+    assert_eq!(summary(&mut m), "1 added, 6 hidden");
     let quads = ui.draw(&m, &tracks, false);
     assert_eq!(crate::focus_target_count(&quads), 1);
     // Playlists and Search taken off Home are kept at hand in Music.
@@ -435,7 +438,7 @@ fn home_places_can_be_hidden_but_now_playing_and_settings_stay() {
     m.settings.show_on_home("radio", true);
     m.settings.pin_home("albums", false);
     assert_eq!(keys(&m), ["now_playing", "music", "radio", "settings"]);
-    assert_eq!(summary(&mut m), "3 hidden");
+    assert_eq!(summary(&mut m), "4 hidden");
     m.screen = Screen::Music;
     assert_eq!(
         keys(&m),
@@ -460,6 +463,7 @@ fn home_places_can_be_hidden_but_now_playing_and_settings_stay() {
             "playlists",
             "radio",
             "jellyfin",
+            "stats",
             "search",
             "settings"
         ]
@@ -477,7 +481,7 @@ fn back_to_home_after_a_home_menu_change_keeps_the_place_focused() {
     select_key(&mut ui, &mut m, "settings");
     select_key(&mut ui, &mut m, "customize");
     select_key(&mut ui, &mut m, "home_menu");
-    // Hide Radio, pin Albums and Songs: Settings moves from 6 to 7.
+    // Hide Radio, pin Albums and Songs: Settings moves from 7 to 8.
     for (key, effect) in [
         (
             "home_show:radio",
@@ -498,7 +502,7 @@ fn back_to_home_after_a_home_menu_change_keeps_the_place_focused() {
     }
     assert_eq!(m.screen, Screen::Home);
     assert_eq!(home(&ui, &m)[m.navigation.focus], "settings");
-    assert_eq!(home(&ui, &m).len(), 8);
+    assert_eq!(home(&ui, &m).len(), 9);
 }
 
 /// The library plus "Momo", three 60-s parts in a Hörbücher folder.
@@ -836,6 +840,7 @@ fn root_is_a_small_music_player_menu() {
             "Playlists",
             "Radio",
             "Jellyfin",
+            "Stats",
             "Search",
             "Settings"
         ]
@@ -6508,4 +6513,95 @@ fn lists_without_letters_keep_their_row_steps() {
     ui.fast_scroll_until = Some(Instant::now() + Duration::from_secs(1));
     ui.model_action(&mut m, Action::WheelClockwise(1));
     assert_eq!(m.navigation.focus, 1);
+}
+
+#[test]
+fn stats_show_a_period_its_rankings_and_each_years_recap() {
+    use reborn_core::stats::{Period, Ranked, Summary};
+    let mut ui = radios();
+    let mut m = app(Screen::Stats);
+    // Nothing kept yet: an explanation and the switch.
+    let tracks = m.library.tracks.clone();
+    let page = crate::pages::page(&ui, &m, &tracks);
+    assert_eq!(page.hero.as_ref().unwrap().title, "No Listening Yet");
+    assert_eq!(
+        select_key(&mut ui, &mut m, "stats_keep"),
+        Effect::SetListeningStats(false)
+    );
+    let summary = |minutes: u64| Summary {
+        ms: minutes * 60_000,
+        plays: 12,
+        artists: 3,
+        top_artists: vec![Ranked {
+            name: "Miles Davis".into(),
+            ms: 40 * 60_000,
+            plays: 9,
+            ..Default::default()
+        }],
+        top_songs: vec![Ranked {
+            name: "So What".into(),
+            by: "Miles Davis".into(),
+            ms: 20 * 60_000,
+            plays: 4,
+        }],
+        current_streak: 2,
+        longest_streak: 5,
+        ..Default::default()
+    };
+    ui.stats.listens = 40;
+    ui.stats.ready = true;
+    for (i, period) in Period::CHOICES.into_iter().enumerate() {
+        ui.stats.summaries.insert(period, summary(60 + i as u64));
+    }
+    ui.stats.years = vec![2025];
+    ui.stats.summaries.insert(Period::Recap(2025), summary(600));
+    let page = crate::pages::page(&ui, &m, &tracks);
+    let facts: Vec<_> = page
+        .facts
+        .iter()
+        .map(|(l, v)| format!("{l}: {v}"))
+        .collect();
+    assert_eq!(
+        facts,
+        [
+            "Listened: 1 h 01 min",
+            "Plays: 12 plays · 3 artists",
+            "Top Artist: Miles Davis · 40 min",
+            "In a Row: 2 days · longest 5 days",
+        ]
+    );
+    // Period steps This Month → This Year.
+    assert_eq!(select_key(&mut ui, &mut m, "stats_period"), Effect::None);
+    assert_eq!(ui.stats.period, Period::Year);
+    let page = crate::pages::page(&ui, &m, &tracks);
+    assert_eq!(page.facts[0].1, "1 h 02 min");
+    // A ranking, numbered, for the period chosen.
+    select_key(&mut ui, &mut m, "stats_list:songs");
+    assert_eq!(m.screen, Screen::StatsList);
+    assert_eq!(crate::screens::screen_title(&m), "Top Songs");
+    let page = crate::pages::page(&ui, &m, &tracks);
+    assert_eq!(page.rows[0].label, "1. So What");
+    assert_eq!(page.rows[0].secondary, "Miles Davis · 20 min");
+    assert_eq!(page.status.as_deref(), Some("This Year"));
+    ui.action(&mut m, &tracks, Action::Back);
+    // A finished year's recap.
+    select_key(&mut ui, &mut m, "stats_recap:2025");
+    assert_eq!(m.screen, Screen::StatsRecap);
+    assert_eq!(crate::screens::screen_title(&m), "Your 2025");
+    let page = crate::pages::page(&ui, &m, &tracks);
+    assert_eq!(page.facts[0].1, "10 h 00 min");
+    select_key(&mut ui, &mut m, "stats_list:artists:2025");
+    let page = crate::pages::page(&ui, &m, &tracks);
+    assert_eq!(page.status.as_deref(), Some("2025"));
+    assert_eq!(page.rows[0].secondary, "40 min · 9 plays");
+    // Reset asks first.
+    m.screen = Screen::Stats;
+    m.navigation.filter.clear();
+    select_key(&mut ui, &mut m, "confirm:reset_stats");
+    assert_eq!(
+        m.navigation.modal,
+        Some(reborn_core::Modal::Confirm(
+            reborn_core::ConfirmAction::ResetStats
+        ))
+    );
 }

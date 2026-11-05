@@ -1798,6 +1798,74 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             m.playback = reborn_core::PlaybackState::Playing;
         }
     );
+    // Listening stats.
+    fn stats_sample(ui: &mut reborn_ui::Ui) {
+        use reborn_core::stats::{Period, Ranked, Summary};
+        let rank = |name: &str, by: &str, minutes: u64, plays: u32| Ranked {
+            name: name.into(),
+            by: by.into(),
+            ms: minutes * 60_000,
+            plays,
+        };
+        let mut hours = [0u64; 24];
+        for (h, minutes) in [(7, 35), (8, 50), (12, 20), (18, 40), (21, 95), (22, 70)] {
+            hours[h] = minutes * 60_000;
+        }
+        let mut months = [0u64; 12];
+        months[6] = 4_000 * 60_000;
+        let summary = |scale: u64| Summary {
+            ms: 1_310 * 60_000 * scale,
+            plays: 412 * scale as u32,
+            songs: 230,
+            artists: 64,
+            albums: 81,
+            top_artists: vec![
+                rank("Miles Davis", "", 182 * scale, 51),
+                rank("John Coltrane", "", 141 * scale, 38),
+                rank("Bill Evans", "", 97 * scale, 30),
+                rank("Nina Simone", "", 64 * scale, 22),
+                rank("Thelonious Monk", "", 41 * scale, 15),
+            ],
+            top_albums: vec![
+                rank("Kind of Blue", "Miles Davis", 95 * scale, 24),
+                rank("A Love Supreme", "John Coltrane", 62 * scale, 16),
+            ],
+            top_songs: vec![
+                rank("So What", "Miles Davis", 38 * scale, 4),
+                rank("Blue in Green", "Miles Davis", 31 * scale, 5),
+            ],
+            hours,
+            months,
+            days: 23,
+            longest_streak: 12,
+            current_streak: 6,
+            ..Default::default()
+        };
+        ui.stats.listens = 412;
+        ui.stats.ready = true;
+        for period in Period::CHOICES {
+            ui.stats.summaries.insert(period, summary(1));
+        }
+        ui.stats.years = vec![2025];
+        ui.stats.summaries.insert(Period::Recap(2025), summary(9));
+    }
+    case!("99-stats", at(Screen::Stats, ""), |ui, _| stats_sample(ui));
+    case!(
+        "99b-stats-top-artists",
+        at(Screen::StatsList, "artists"),
+        |ui, _| { stats_sample(ui) }
+    );
+    case!(
+        "99c-stats-hours",
+        at(Screen::StatsList, "hours"),
+        |ui, _| { stats_sample(ui) }
+    );
+    case!(
+        "99d-stats-recap",
+        at(Screen::StatsRecap, "2025"),
+        |ui, _| { stats_sample(ui) }
+    );
+    case!("99e-stats-empty", at(Screen::Stats, ""), |_, _| {});
     case!(
         "96d-settings-with-lastfm",
         at(Screen::Settings, ""),

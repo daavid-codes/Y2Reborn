@@ -9,6 +9,7 @@ pub mod playlist;
 pub mod queue;
 pub mod scrobble;
 pub mod sort;
+pub mod stats;
 mod zones;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -1027,6 +1028,13 @@ pub enum Screen {
     Jellyfin,
     /// One Jellyfin list; the navigation filter holds "key\u{1f}title".
     JellyfinList,
+    /// Listening stats: a period's minutes, top names and streaks.
+    Stats,
+    /// One ranking ("artists", "albums", "songs", "hours"), with ":YEAR"
+    /// for a recap's; the navigation filter holds it.
+    StatsList,
+    /// One finished year's recap; the navigation filter holds the year.
+    StatsRecap,
     /// One playlist; the navigation filter holds its file's path.
     Playlist,
     /// About & Updates > Error Reports; filter "info": what is sent, "save":
@@ -1099,6 +1107,8 @@ pub enum ConfirmAction {
     ReportsQuestion,
     /// Wired volume above the safe level (hearing warning).
     LoudVolume,
+    /// Forget every listen the stats were made from.
+    ResetStats,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1293,6 +1303,10 @@ pub struct Settings {
     pub lastfm_scrobble: bool,
     #[serde(default = "default_true")]
     pub lastfm_now_playing: bool,
+    /// Keep listening stats (Home → Stats): a record of what was heard,
+    /// kept on the player only.
+    #[serde(default = "default_true")]
+    pub listening_stats: bool,
     /// The one-time "Set Up Internal Storage?" question was shown.
     #[serde(default)]
     pub internal_setup_asked: bool,
@@ -1331,12 +1345,13 @@ pub const HOME_PINNABLE: [(&str, &str); 5] = [
 ];
 /// Home's own places that can be taken off Home, in Home's order: (key,
 /// label). Music stands first, the others after the pinned lists.
-pub const HOME_HIDEABLE: [(&str, &str); 6] = [
+pub const HOME_HIDEABLE: [(&str, &str); 7] = [
     ("music", "Music"),
     ("playlists", "Playlists"),
     ("radio", "Radio"),
     ("spotify", "Spotify"),
     ("jellyfin", "Jellyfin"),
+    ("stats", "Stats"),
     ("search", "Search"),
 ];
 /// How Albums and Audiobooks show their covers: Customize > Cover Flow.
@@ -1641,6 +1656,7 @@ impl Default for Settings {
             scrobble_log: false,
             lastfm_scrobble: true,
             lastfm_now_playing: true,
+            listening_stats: true,
             internal_setup_asked: false,
             hp_level: HpLevel::Low,
             volume_scale: VOLUME_SCALE,
@@ -1910,6 +1926,10 @@ pub enum Effect {
     LastFm(LastFmRequest),
     Spotify(SpotifyRequest),
     Jellyfin(JellyfinRequest),
+    /// Keep listening stats, or stop (what was kept stays).
+    SetListeningStats(bool),
+    /// Forget every listen kept.
+    ResetStats,
     SetScrobbleLog(bool),
     SetLastFmScrobble(bool),
     SetLastFmNowPlaying(bool),
