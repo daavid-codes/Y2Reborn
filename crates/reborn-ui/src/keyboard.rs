@@ -36,6 +36,8 @@ pub enum Purpose {
     LastFmPassword {
         username: String,
     },
+    /// A Jellyfin server's address ("192.168.1.20:8096", "https://…").
+    JellyfinServer,
 }
 
 impl Purpose {
@@ -47,6 +49,7 @@ impl Purpose {
             Self::PlaylistNew | Self::PlaylistRename => 60,
             Self::LastFmUser => 32,
             Self::LastFmPassword { .. } => 64,
+            Self::JellyfinServer => 120,
         }
     }
     fn secret(&self) -> bool {
@@ -63,6 +66,7 @@ impl Purpose {
             Self::PlaylistRename => "Rename",
             Self::LastFmUser => "Next",
             Self::LastFmPassword { .. } => "Sign In",
+            Self::JellyfinServer => "Connect",
         }
     }
     pub(crate) fn title(&self) -> String {
@@ -75,6 +79,7 @@ impl Purpose {
             Self::PlaylistRename => "Rename Playlist".into(),
             Self::LastFmUser => "Last.fm Username".into(),
             Self::LastFmPassword { .. } => "Last.fm Password".into(),
+            Self::JellyfinServer => "Jellyfin Server".into(),
         }
     }
     fn prompt(&self) -> String {
@@ -85,6 +90,7 @@ impl Purpose {
             Self::PlaylistNew | Self::PlaylistRename => "Playlist name".into(),
             Self::LastFmUser => "Username".into(),
             Self::LastFmPassword { username } => format!("Password for “{username}”"),
+            Self::JellyfinServer => "Address, e.g. 192.168.1.20:8096".into(),
         }
     }
 }

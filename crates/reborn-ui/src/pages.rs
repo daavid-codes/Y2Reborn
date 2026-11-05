@@ -200,6 +200,8 @@ pub fn page(ui: &Ui, m: &AppModel, tracks: &[Track]) -> Page {
         Screen::LastFm => lastfm(ui, m),
         Screen::Spotify => spotify(ui),
         Screen::SpotifyList => spotify_list(ui, m),
+        Screen::Jellyfin => jellyfin(ui),
+        Screen::JellyfinList => jellyfin_list(ui, m),
         Screen::Equalizer => equalizer(ui, m),
         Screen::Crossfade => crossfade(m),
         Screen::Balance => balance(m),
@@ -487,11 +489,151 @@ fn spotify(ui: &Ui) -> Page {
     page
 }
 
+/// Jellyfin: choose a server (found on the network or typed), sign in with
+/// Quick Connect (a QR code while it runs), then the library.
+fn jellyfin(ui: &Ui) -> Page {
+    let j = &ui.jellyfin;
+    if j.approval.is_some() {
+        return Page::hero(
+            "Approve on Your Phone",
+            format!(
+                "Scan the code with a phone signed in to Jellyfin and tap Authorize, or enter {} under Quick Connect in a Jellyfin app.",
+                j.user_code
+            ),
+        )
+        .with_rows(vec![row("Cancel", "jf_cancel", "")]);
+    }
+    let wifi = || row("Connect to Wi-Fi", "jf_wifi", "Jellyfin needs the network");
+    let mut rows = vec![];
+    if !ui.radio.online {
+        rows.push(wifi());
+    }
+    let Some((name, address)) = &j.server else {
+        let mut page = Page::hero(
+            "Listen from Your Jellyfin Server",
+            if j.searching {
+                "Looking for servers on this network…"
+            } else if j.found.is_empty() {
+                "No server answered on this network. Enter its address instead."
+            } else {
+                "Choose your server."
+            },
+        );
+        rows.extend(
+            j.found
+                .iter()
+                .enumerate()
+                .map(|(i, (name, address))| row(name, &format!("jf_server:{i}"), address.clone())),
+        );
+        rows.push(row(
+            "Search Again",
+            "jf_discover",
+            if j.searching { "Searching…" } else { "" },
+        ));
+        rows.push(row("Enter Address…", "jf_address", "").with_kind(RowKind::Chevron));
+        page.rows = rows;
+        page.status = j.problem.clone();
+        return page;
+    };
+    let Some(user) = &j.user else {
+        let mut page = Page::hero(
+            format!("Sign In to {name}"),
+            "Approve the player from your phone with Quick Connect: no password is typed here.",
+        );
+        rows.push(
+            row(
+                "Sign In with Quick Connect",
+                "jf_connect",
+                if j.busy { "Starting…" } else { "Scan a code" },
+            )
+            .with_kind(RowKind::Chevron),
+        );
+        rows.push(row("Change Server", "jf_change", address.clone()));
+        page.rows = rows;
+        page.status = j.problem.clone();
+        return page;
+    };
+    let mut head = vec![];
+    if let Some((title, artist)) = &j.song {
+        head.push(row(title, "jf_now", artist.clone()));
+    }
+    head.extend(rows);
+    head.extend([
+        row("Playlists", "jf_open:playlists", "").with_kind(RowKind::Chevron),
+        row("Favorites", "jf_open:favorites", "").with_kind(RowKind::Chevron),
+        row("Albums", "jf_open:albums", "").with_kind(RowKind::Chevron),
+        row("Artists", "jf_open:artists", "").with_kind(RowKind::Chevron),
+        row("Disconnect", "jf_disconnect", format!("{user} on {name}")),
+    ]);
+    let mut page = Page::rows(head);
+    page.status = j.problem.clone();
+    page
+}
+
+/// One Jellyfin list: loading, a problem, its rows and "More" while the
+/// server has more. An artist is a menu of two lists.
+fn jellyfin_list(ui: &Ui, m: &AppModel) -> Page {
+    let key = crate::service_filter(&m.navigation.filter).0;
+    let (kind, id) = crate::service_list_kind(key);
+    if kind == "artist" {
+        return Page::rows(vec![
+            row("Albums", &format!("jf_artist:artist-albums:{id}"), "").with_kind(RowKind::Chevron),
+            row("All Songs", &format!("jf_artist:artist-songs:{id}"), "")
+                .with_kind(RowKind::Chevron),
+        ]);
+    }
+    let Some(list) = ui.jellyfin.lists.get(key) else {
+        return Page::hero("Loading…", "Asking your Jellyfin server.");
+    };
+    if list.loading && list.rows.is_empty() {
+        return Page::hero("Loading…", "Asking your Jellyfin server.");
+    }
+    if let Some(error) = &list.error {
+        if list.rows.is_empty() {
+            return Page::hero("Couldn't Load This List", error.clone()).with_rows(vec![row(
+                "Try Again",
+                "jf_retry",
+                "",
+            )]);
+        }
+    }
+    if list.rows.is_empty() {
+        let body = match kind {
+            "playlists" => "Music playlists on your server appear here.",
+            "favorites" => "Songs you mark as favorites in Jellyfin appear here.",
+            _ => "Your server has nothing to show here.",
+        };
+        return Page::hero("Nothing Here Yet", body);
+    }
+    let opens = matches!(kind, "playlists" | "albums" | "artist-albums" | "artists");
+    let mut rows = vec![];
+    if !opens {
+        rows.push(row("Play All", "jf_play_all", ""));
+        rows.push(row("Shuffle", "jf_shuffle", ""));
+    }
+    rows.extend(list.rows.iter().enumerate().map(|(i, r)| {
+        let item = row(&r.title, &format!("jf_row:{i}"), r.detail.clone());
+        if opens {
+            item.with_kind(RowKind::Chevron)
+        } else {
+            item
+        }
+    }));
+    if list.next.is_some() {
+        rows.push(row(
+            if list.loading { "Loading…" } else { "More" },
+            "jf_more",
+            "",
+        ));
+    }
+    Page::rows(rows)
+}
+
 /// One Spotify list: loading, a problem, its rows and "More" while Spotify
 /// has another page. An artist is a menu of three lists.
 fn spotify_list(ui: &Ui, m: &AppModel) -> Page {
-    let key = crate::spotify_filter(&m.navigation.filter).0;
-    let (kind, id) = crate::spotify_list_kind(key);
+    let key = crate::service_filter(&m.navigation.filter).0;
+    let (kind, id) = crate::service_list_kind(key);
     if kind == "artist" {
         return Page::rows(vec![
             row(

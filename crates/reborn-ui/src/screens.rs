@@ -101,6 +101,9 @@ pub fn draw(ui: &Ui, m: &AppModel, tracks: &[Track], has_art: bool) -> Vec<Quad>
             Screen::Spotify if ui.spotify.approval.is_some() => {
                 views_settings::spotify_sign_in(&mut c, ui, m, tracks, interactive)
             }
+            Screen::Jellyfin if ui.jellyfin.approval.is_some() => {
+                views_settings::jellyfin_sign_in(&mut c, ui, m, tracks, interactive)
+            }
             _ => views_system::page(&mut c, ui, m, tracks, interactive),
         }
     }
@@ -164,6 +167,9 @@ fn native_screen(
         Screen::Spotify if ui.spotify.approval.is_some() => {
             views_settings::spotify_sign_in(c, ui, m, tracks, interactive)
         }
+        Screen::Jellyfin if ui.jellyfin.approval.is_some() => {
+            views_settings::jellyfin_sign_in(c, ui, m, tracks, interactive)
+        }
         _ => views_system::page(c, ui, m, tracks, interactive),
     }
 }
@@ -214,6 +220,8 @@ fn layout_keys(m: &AppModel, page: Option<&Page>, empty: bool) -> &'static [&'st
         Screen::LastFm => keys!("lastfm"),
         Screen::Spotify => keys!("spotify"),
         Screen::SpotifyList => keys!("spotify_list"),
+        Screen::Jellyfin => keys!("jellyfin"),
+        Screen::JellyfinList => keys!("jellyfin_list"),
         Screen::SettingsPlayback => keys!("playback"),
         Screen::Crossfade => keys!("crossfade"),
         Screen::Balance => keys!("balance"),
@@ -295,6 +303,9 @@ pub(crate) fn skin_layout<'s>(
         return None;
     }
     if m.screen == Screen::Spotify && ui.spotify.approval.is_some() {
+        return None;
+    }
+    if m.screen == Screen::Jellyfin && ui.jellyfin.approval.is_some() {
         return None;
     }
     let page = skin_page(ui, m, tracks);
@@ -759,7 +770,10 @@ pub fn screen_title(m: &AppModel) -> String {
         Screen::SettingsAudio => "Sound".into(),
         Screen::LastFm => "Last.fm".into(),
         Screen::Spotify => "Spotify".into(),
-        Screen::SpotifyList => crate::spotify_filter(&m.navigation.filter).1.into(),
+        Screen::SpotifyList | Screen::JellyfinList => {
+            crate::service_filter(&m.navigation.filter).1.into()
+        }
+        Screen::Jellyfin => "Jellyfin".into(),
         Screen::Equalizer => "Equalizer".into(),
         Screen::SettingsPlayback => "Playback".into(),
         Screen::Crossfade => "Crossfade".into(),

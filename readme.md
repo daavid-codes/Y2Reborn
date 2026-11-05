@@ -51,6 +51,15 @@ through ALSA (wired) or BlueALSA (Bluetooth), and keeps its library in SQLite.
   Spotify Connect device of your account: the phone app can start, pause and skip it. Needs
   `spotifyd` and `reborn-spotify-metadata` in the Y2Linux image ([how](tools/spotify/README.md));
   without them Spotify isn't on Home. Not yet tried on a Y2.
+- **Jellyfin** (Home → Jellyfin): your own music server. Servers on the home network are found
+  by themselves, or type an address (an internet address works too). Sign in with Quick Connect:
+  scan a QR code with a phone signed in to Jellyfin and tap Authorize, or enter the six-digit code
+  in a Jellyfin app; no password on the player. Then Playlists, Favorites, Albums and Artists
+  (Albums, All Songs), each with Play All and Shuffle. A list becomes Reborn's own queue, so
+  Previous/Next, shuffle, repeat and seeking work as for songs on the player; songs Reborn can read
+  from a stream (FLAC, MP3, Ogg, Opus, WAV, AAC) arrive untouched, others are converted to MP3 by
+  the server. The server hears what plays (play counts, its dashboard, scrobbling plugins).
+  Quick Connect has to be on in the server's Dashboard › General. Not yet tried on a Y2.
 - Sound and playback: five-band equalizer with presets, headphone profiles (47 common
   headphones and IEMs from AutoEQ built in, more as `ParametricEQ.txt` files in an `EQ` folder; up to 10
   filters with a clip-safe preamp),
@@ -135,6 +144,19 @@ Code: `crates/reborn-core/src/scrobble.rs` (what counts), `crates/reborn-platfor
   `app/reborn/src/spotify.rs` (the player's side), `crates/reborn-ui` (`SpotifyView`, the pages),
   `tools/spotify` (spotifyd patch, D-Bus policy, build notes) and `tools/spotify-metadata` (the
   library helper, its own workspace).
+
+## Jellyfin
+
+- **Sign-in:** Jellyfin Quick Connect (`/QuickConnect/Initiate`, approval on the server's own
+  `/web/#/quickconnect?code=…` page, then `/Users/AuthenticateWithQuickConnect`). The player keeps
+  the server address and its access token in one root-only file,
+  `/data/reborn/state/jellyfin/account.json`; it lasts until revoked in Dashboard › Devices or with
+  Disconnect. The token goes to curl on its standard input, never on a command line or in logs.
+- **Streaming:** `/Audio/{id}/universal` from the start of a song, `/Audio/{id}/stream.mp3` with
+  `startTimeTicks` after a seek; `curl` receives it and Reborn's decoder plays it from the pipe.
+- **Code:** `crates/reborn-platform/src/jellyfin.rs` (discovery, Quick Connect, library requests,
+  streams, play reports), `app/reborn/src/jellyfin.rs` (the player's side), `crates/reborn-ui`
+  (`JellyfinView`, the pages). Downloads for listening away from the server are planned.
 
 ## Development
 

@@ -59,19 +59,23 @@ pub fn now_playing(
 
     // Spotify says so above the title, with what it plays from, so it is
     // never taken for the music on the player.
-    let spotify = t.is_spotify();
-    if spotify {
-        let w = components::source_pill(
-            c,
-            222.,
-            61.,
-            "SPOTIFY",
-            components::SPOTIFY_GREEN,
-            0x0B0D10FF,
-        );
+    // Jellyfin, likewise: its songs are on a server, not the player.
+    let service = t.is_spotify() || t.is_jellyfin();
+    if service {
+        let (label, fill, ink, prefix) = if t.is_jellyfin() {
+            (
+                "JELLYFIN",
+                components::JELLYFIN_PURPLE,
+                color::TEXT,
+                "Jellyfin",
+            )
+        } else {
+            ("SPOTIFY", components::SPOTIFY_GREEN, 0x0B0D10FF, "Spotify")
+        };
+        let w = components::source_pill(c, 222., 61., label, fill, ink);
         let from = m
             .queue_source
-            .strip_prefix("Spotify")
+            .strip_prefix(prefix)
             .map(|s| s.trim_start_matches([':', ' ']))
             .unwrap_or("");
         c.text_tracked(
@@ -103,8 +107,8 @@ pub fn now_playing(
     };
     let lines = text::wrap(Face::S25, &title, 236., 2);
     // A song needs no label saying it plays: its title takes the label's place.
-    // A station keeps the LIVE line above its title, Spotify its own.
-    let mut baseline = if radio || spotify { 107. } else { 84. };
+    // A station keeps the LIVE line above its title, a service its own.
+    let mut baseline = if radio || service { 107. } else { 84. };
     for line in &lines {
         c.text(222., baseline, line, Face::S25, color::TEXT);
         baseline += 28.;
@@ -126,7 +130,7 @@ pub fn now_playing(
         color::MUTED,
     );
     let info_cy = artist_baseline + 45.;
-    let source_offline = !t.is_live()
+    let source_offline = !t.is_streamed()
         && !m.sources.is_empty()
         && !m.sources.iter().any(|s| s.id == t.source_id && s.online);
     if source_offline
@@ -323,6 +327,12 @@ pub(crate) fn quality_label(t: &Track) -> Option<String> {
         return Some(match t.bitrate {
             0 => "SPOTIFY".into(),
             b => format!("SPOTIFY · {} KBPS", b / 1000),
+        });
+    }
+    if t.is_jellyfin() {
+        return Some(match t.codec.as_str() {
+            "" => "JELLYFIN".into(),
+            codec => format!("JELLYFIN · {}", codec.to_uppercase()),
         });
     }
     if t.codec.is_empty() {

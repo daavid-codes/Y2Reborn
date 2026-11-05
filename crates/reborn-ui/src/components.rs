@@ -1027,6 +1027,8 @@ pub fn live_pill(c: &mut Canvas, x: f32, cy: f32, label: &str) -> f32 {
 
 /// Spotify's green, for the pill that says a song streams from Spotify.
 pub const SPOTIFY_GREEN: u32 = 0x1ED760FF;
+/// Jellyfin's purple, for the pill of a song from a Jellyfin server.
+pub const JELLYFIN_PURPLE: u32 = 0xAA5CC3FF;
 
 /// A rounded label with a dot: where the sound comes from (LIVE, SPOTIFY).
 pub fn source_pill(c: &mut Canvas, x: f32, cy: f32, label: &str, fill: u32, ink: u32) -> f32 {

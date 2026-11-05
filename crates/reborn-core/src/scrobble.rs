@@ -75,7 +75,7 @@ pub fn play_of(track: &Track) -> Option<Play> {
     let artist = track.artist.trim();
     let title = track.title.trim();
     // Audiobooks are not scrobbled: they are not music listening.
-    if track.is_live()
+    if track.is_streamed()
         || track.book
         || artist.is_empty()
         || title.is_empty()

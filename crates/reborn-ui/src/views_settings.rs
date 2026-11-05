@@ -103,6 +103,41 @@ pub fn spotify_sign_in(c: &mut Canvas, ui: &Ui, m: &AppModel, tracks: &[Track], 
     );
 }
 
+/// Jellyfin's Quick Connect: the server's approval page as a QR code, and
+/// the code for a Jellyfin app's Quick Connect screen.
+pub fn jellyfin_sign_in(
+    c: &mut Canvas,
+    ui: &Ui,
+    m: &AppModel,
+    tracks: &[Track],
+    interactive: bool,
+) {
+    let page = pages::page(ui, m, tracks);
+    components::status_bar(c, ui, m, &screen_title(m), true);
+    let Some(url) = &ui.jellyfin.approval else {
+        return;
+    };
+    let typed = format!("   code {}", ui.jellyfin.user_code);
+    qr_page(
+        c,
+        url,
+        ui.jellyfin.code.as_ref(),
+        "Sign in to Jellyfin",
+        &[
+            "1  Scan the code with",
+            "   a phone signed in",
+            "   to Jellyfin, or in its",
+            "   app's Quick Connect",
+            &typed,
+            "2  Tap Authorize. This",
+            "   page continues.",
+        ],
+        &page,
+        m.navigation.focus.min(page.rows.len().saturating_sub(1)),
+        interactive,
+    );
+}
+
 #[allow(clippy::too_many_arguments)]
 fn qr_page(
     c: &mut Canvas,

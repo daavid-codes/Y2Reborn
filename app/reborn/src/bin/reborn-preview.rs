@@ -1690,11 +1690,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ];
             ui.spotify.lists.insert(
                 "playlist-tracks:37i9dQZF1DXbITWG1ZJKYt".into(),
-                reborn_ui::SpotifyList {
+                reborn_ui::ServiceList {
                     title: "Jazz Classics".into(),
                     rows: rows
                         .iter()
-                        .map(|(t, a)| reborn_ui::SpotifyRow {
+                        .map(|(t, a)| reborn_ui::ServiceRow {
                             title: (*t).into(),
                             detail: (*a).into(),
                             uri: "spotify:track:x".into(),
@@ -1719,6 +1719,82 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             m.replace_queue(vec![t], 0).unwrap();
             m.set_source("Spotify: Jazz Classics", None);
             m.position_ms = 131_000;
+            m.playback = reborn_core::PlaybackState::Playing;
+        }
+    );
+    // Jellyfin.
+    case!("98-jellyfin-servers", at(Screen::Jellyfin, ""), |ui, _| {
+        ui.radio.online = true;
+        ui.jellyfin.found = vec![
+            ("Home Server".into(), "http://192.168.1.20:8096".into()),
+            ("NAS".into(), "http://192.168.1.40:8096".into()),
+        ];
+    });
+    case!("98b-jellyfin-sign-in", at(Screen::Jellyfin, ""), |ui, _| {
+        ui.radio.online = true;
+        ui.jellyfin.server = Some(("Home Server".into(), "http://192.168.1.20:8096".into()));
+    });
+    case!("98c-jellyfin-code", at(Screen::Jellyfin, ""), |ui, _| {
+        ui.jellyfin.server = Some(("Home Server".into(), "http://192.168.1.20:8096".into()));
+        ui.jellyfin.approval =
+            Some("http://192.168.1.20:8096/web/#/quickconnect?code=482913".into());
+        ui.jellyfin.user_code = "482913".into();
+    });
+    case!("98d-jellyfin-library", at(Screen::Jellyfin, ""), |ui, _| {
+        ui.radio.online = true;
+        ui.jellyfin.server = Some(("Home Server".into(), "http://192.168.1.20:8096".into()));
+        ui.jellyfin.user = Some("david".into());
+    });
+    case!(
+        "98e-jellyfin-album",
+        at(
+            Screen::JellyfinList,
+            "album:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\u{1f}Kind of Blue"
+        ),
+        |ui, m| {
+            let rows = [
+                "So What",
+                "Freddie Freeloader",
+                "Blue in Green",
+                "All Blues",
+            ];
+            ui.jellyfin.lists.insert(
+                "album:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                reborn_ui::ServiceList {
+                    title: "Kind of Blue".into(),
+                    rows: rows
+                        .iter()
+                        .map(|t| reborn_ui::ServiceRow {
+                            title: (*t).into(),
+                            detail: "Miles Davis".into(),
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                },
+            );
+            m.navigation.focus = 2;
+        }
+    );
+    case!(
+        "98f-jellyfin-now-playing",
+        at(Screen::NowPlaying, ""),
+        |_, m| {
+            let mut t = reborn_core::Track {
+                id: -99,
+                source_id: reborn_core::JELLYFIN_SOURCE.into(),
+                filename: "fedcba9876543210fedcba9876543210".into(),
+                title: "Blue in Green".into(),
+                artist: "Miles Davis".into(),
+                album: "Kind of Blue".into(),
+                codec: "flac".into(),
+                online: true,
+                ..Default::default()
+            };
+            t.duration_ms = 337_000;
+            m.replace_queue(vec![t], 0).unwrap();
+            m.set_source("Jellyfin: Kind of Blue", None);
+            m.position_ms = 92_000;
             m.playback = reborn_core::PlaybackState::Playing;
         }
     );

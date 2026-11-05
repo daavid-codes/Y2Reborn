@@ -13,7 +13,7 @@ use crate::Runtime;
 use reborn_core::{PlaybackState, SpotifyRequest, Track};
 use reborn_observability::Level;
 use reborn_platform::spotify::{self as sp, Command, Daemon, DeviceCode, Paths, Phase, Poll};
-use reborn_ui::{SpotifyList, SpotifyRow};
+use reborn_ui::{ServiceList, ServiceRow};
 use serde_json::json;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
@@ -117,8 +117,8 @@ impl Spotify {
 
 /// The Spotify context a song plays in: its playlist or album, Liked Songs,
 /// else its own album (top songs, an artist's songs).
-pub fn context_for(key: &str, list: &SpotifyList, row: &SpotifyRow) -> Option<String> {
-    let (kind, id) = reborn_ui::spotify_list_kind(key);
+pub fn context_for(key: &str, list: &ServiceList, row: &ServiceRow) -> Option<String> {
+    let (kind, id) = reborn_ui::service_list_kind(key);
     match kind {
         "playlist-tracks" => Some(format!("spotify:playlist:{id}")),
         "album-tracks" => Some(format!("spotify:album:{id}")),
@@ -130,7 +130,7 @@ pub fn context_for(key: &str, list: &SpotifyList, row: &SpotifyRow) -> Option<St
 
 /// A list key as the helper's command and argument.
 fn command_of(key: &str) -> Option<(&str, &str)> {
-    let (kind, id) = reborn_ui::spotify_list_kind(key);
+    let (kind, id) = reborn_ui::service_list_kind(key);
     let command = match kind {
         "playlist-tracks" | "album-tracks" | "artist-albums" | "artist-top-tracks"
         | "artist-all-tracks" => kind,
@@ -256,7 +256,7 @@ impl Runtime {
                     .lists
                     .get(&list)
                     .ok_or("Spotify list not found")?;
-                let (kind, id) = reborn_ui::spotify_list_kind(&list);
+                let (kind, id) = reborn_ui::service_list_kind(&list);
                 let uri = match kind {
                     "playlist-tracks" => format!("spotify:playlist:{id}"),
                     "album-tracks" => format!("spotify:album:{id}"),
@@ -580,8 +580,9 @@ impl Runtime {
             self.spotify_view();
         }
         let current = self.model.current().is_some_and(Track::is_spotify);
-        if !current && self.spotify_cover.is_some() {
-            self.spotify_cover = None;
+        // (Another service's song keeps its own cover.)
+        if !self.model.current().is_some_and(Track::is_streamed) && self.stream_cover.is_some() {
+            self.stream_cover = None;
         }
         if current {
             if let Some(song) = &status.song {
@@ -662,8 +663,7 @@ impl Runtime {
     fn spotify_art(&mut self, url: &str) {
         self.art = false;
         self.radio_art_pending = None;
-        self.spotify_cover =
-            (!url.is_empty()).then(|| (reborn_core::logo_key(url), url.to_owned()));
+        self.stream_cover = (!url.is_empty()).then(|| (reborn_core::logo_key(url), url.to_owned()));
     }
 
     fn spotify_reply(&mut self, sequence: u64, reply: Reply) {
@@ -774,7 +774,7 @@ impl Runtime {
                 match result {
                     Ok(listing) => {
                         let rows = listing.items.iter().map(|r| {
-                            SpotifyRow::from_label(
+                            ServiceRow::from_label(
                                 &r.label,
                                 r.uri.as_deref().unwrap_or(""),
                                 r.id.as_deref().unwrap_or(""),
@@ -808,8 +808,8 @@ impl Runtime {
 mod tests {
     use super::*;
 
-    fn row(id: &str) -> SpotifyRow {
-        SpotifyRow {
+    fn row(id: &str) -> ServiceRow {
+        ServiceRow {
             title: "Song".into(),
             detail: "Artist".into(),
             uri: "spotify:track:t".into(),
@@ -819,7 +819,7 @@ mod tests {
 
     #[test]
     fn songs_play_in_the_list_they_were_chosen_from() {
-        let list = SpotifyList::default();
+        let list = ServiceList::default();
         assert_eq!(
             context_for("playlist-tracks:p1", &list, &row("a")).as_deref(),
             Some("spotify:playlist:p1")
@@ -828,7 +828,7 @@ mod tests {
             context_for("album-tracks:a1", &list, &row("a")).as_deref(),
             Some("spotify:album:a1")
         );
-        let liked = SpotifyList {
+        let liked = ServiceList {
             context: Some("spotify:user:me:collection".into()),
             ..Default::default()
         };

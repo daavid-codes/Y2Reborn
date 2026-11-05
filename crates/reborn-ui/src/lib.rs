@@ -297,17 +297,17 @@ pub struct SpotifyView {
     pub busy: bool,
     /// spotifyd isn't running, and why (shown on the Spotify page).
     pub problem: Option<String>,
-    /// Lists by key (`SpotifyList::key`), kept so Back shows them at once.
-    pub lists: std::collections::HashMap<String, SpotifyList>,
+    /// Lists by key (their navigation key), kept so Back shows them at once.
+    pub lists: std::collections::HashMap<String, ServiceList>,
     /// The song spotifyd plays now: (title, artist).
     pub song: Option<(String, String)>,
 }
 
 /// One Spotify list: a playlist, an album, Liked Songs, an artist's songs.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct SpotifyList {
+pub struct ServiceList {
     pub title: String,
-    pub rows: Vec<SpotifyRow>,
+    pub rows: Vec<ServiceRow>,
     /// Cursor of the next page, when there is one.
     pub next: Option<String>,
     /// A context for the whole list (Liked Songs).
@@ -317,7 +317,7 @@ pub struct SpotifyList {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct SpotifyRow {
+pub struct ServiceRow {
     pub title: String,
     /// The artist (songs, albums) or owner (playlists).
     pub detail: String,
@@ -325,7 +325,7 @@ pub struct SpotifyRow {
     /// The playlist's, album's or artist's own id; a song's album.
     pub id: String,
 }
-impl SpotifyRow {
+impl ServiceRow {
     /// From the helper's "Name - Artist" label.
     pub fn from_label(label: &str, uri: &str, id: &str) -> Self {
         let (title, detail) = match label.rsplit_once(" - ") {
@@ -341,15 +341,41 @@ impl SpotifyRow {
     }
 }
 
-/// What a list key (the navigation filter of `Screen::SpotifyList`) shows:
-/// the helper's command and its argument; an artist is a menu of its own.
-pub fn spotify_list_kind(key: &str) -> (&str, &str) {
+/// What a list key (the navigation filter of `Screen::SpotifyList` and
+/// `Screen::JellyfinList`) shows: its kind and the id it belongs to; an
+/// artist is a menu of its own.
+pub fn service_list_kind(key: &str) -> (&str, &str) {
     key.split_once(':').unwrap_or((key, ""))
 }
 
-/// `Screen::SpotifyList`'s navigation filter: (list key, title).
-pub fn spotify_filter(filter: &str) -> (&str, &str) {
+/// A service list's navigation filter: (list key, title).
+pub fn service_filter(filter: &str) -> (&str, &str) {
     filter.split_once('\u{1f}').unwrap_or((filter, "Spotify"))
+}
+
+/// Jellyfin as the player knows it: the server, the sign-in, the lists.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct JellyfinView {
+    /// The server chosen: its name (or address) and address.
+    pub server: Option<(String, String)>,
+    /// The account signed in on it.
+    pub user: Option<String>,
+    /// Servers that answered on the home network: (name, address).
+    pub found: Vec<(String, String)>,
+    pub searching: bool,
+    /// A Quick Connect in progress: the approval page its QR code holds,
+    /// and the code to type in a Jellyfin app instead.
+    pub approval: Option<String>,
+    pub user_code: String,
+    pub code: Option<qr::Code>,
+    /// A request is running (checking the server, starting a sign-in).
+    pub busy: bool,
+    /// Why the last step failed, shown on the Jellyfin page.
+    pub problem: Option<String>,
+    /// Lists by key, kept so Back shows them at once.
+    pub lists: std::collections::HashMap<String, ServiceList>,
+    /// The song playing from Jellyfin: (title, artist).
+    pub song: Option<(String, String)>,
 }
 
 /// Internet radio lists as the player last received them.
@@ -452,6 +478,7 @@ pub struct Ui {
     pub radio: RadioView,
     pub lastfm: LastFmView,
     pub spotify: SpotifyView,
+    pub jellyfin: JellyfinView,
     pub pairing: Option<String>,
     pub pairing_focus: usize,
     /// The full-screen keyboard, while it is open.
@@ -1560,6 +1587,24 @@ impl Ui {
                 }
                 return rows;
             }
+            // A Jellyfin song: Reborn's own queue, the server's library.
+            if current.is_jellyfin() {
+                let next = m
+                    .queue
+                    .get(m.queue_position + 1)
+                    .filter(|_| m.settings.repeat != RepeatMode::Track)
+                    .map(|t| track_title(t).to_owned())
+                    .unwrap_or_default();
+                return vec![
+                    Item::new("Up Next", "show_queue").with_secondary(next),
+                    Item::new("Sleep Timer", "sleep_timer").with_secondary(sleep_label(m, false)),
+                    Item::new("Shuffle", "toggle_shuffle")
+                        .with_secondary(m.settings.shuffle_mode().label()),
+                    Item::new("Repeat", "cycle_repeat")
+                        .with_secondary(repeat_label(m.settings.repeat)),
+                    Item::new("Jellyfin", "jellyfin_page"),
+                ];
+            }
             // Spotify keeps its own queue, shuffle and library.
             if current.is_spotify() {
                 return vec![
@@ -2656,6 +2701,7 @@ impl Ui {
                 return self.radio_select(m, key)
             }
             Screen::Spotify | Screen::SpotifyList => return self.spotify_select(m, key),
+            Screen::Jellyfin | Screen::JellyfinList => return self.jellyfin_select(m, key),
             _ => {}
         }
         Effect::None
@@ -2663,8 +2709,135 @@ impl Ui {
 
     /// Open Spotify list `key` titled `title`; loaded unless it is an
     /// artist's menu (nothing to fetch) or already here.
+    /// Open Jellyfin list `key` titled `title`, loaded unless it is an
+    /// artist's menu or already here.
+    fn jellyfin_open(&mut self, m: &mut AppModel, key: String, title: &str) -> Effect {
+        let (kind, _) = service_list_kind(&key);
+        let list = self.jellyfin.lists.entry(key.clone()).or_default();
+        list.title = title.into();
+        Self::go(m, Screen::JellyfinList, format!("{key}\u{1f}{title}"));
+        if kind == "artist" || (!list.rows.is_empty() && list.error.is_none()) {
+            return Effect::None;
+        }
+        list.loading = true;
+        list.error = None;
+        Effect::Jellyfin(reborn_core::JellyfinRequest::Load(key))
+    }
+
+    fn jellyfin_select(&mut self, m: &mut AppModel, key: &str) -> Effect {
+        use reborn_core::JellyfinRequest as R;
+        let list = || service_filter(&m.navigation.filter).0.to_owned();
+        match key {
+            "jf_discover" => return Effect::Jellyfin(R::Discover),
+            "jf_address" => {
+                let typed = self
+                    .jellyfin
+                    .server
+                    .as_ref()
+                    .map(|(_, a)| a.clone())
+                    .unwrap_or_default();
+                self.keyboard = Some(keyboard::Keyboard::new(
+                    keyboard::Purpose::JellyfinServer,
+                    typed,
+                ));
+                return Effect::None;
+            }
+            "jf_change" => return Effect::Jellyfin(R::ChangeServer),
+            "jf_connect" => return Effect::Jellyfin(R::Connect),
+            "jf_cancel" => return Effect::Jellyfin(R::Cancel),
+            "jf_disconnect" => return Effect::Jellyfin(R::Disconnect),
+            "jf_wifi" => {
+                Self::go(m, Screen::Wifi, "");
+                return Effect::None;
+            }
+            "jf_now" => {
+                Self::go(m, Screen::NowPlaying, "");
+                return Effect::None;
+            }
+            "jf_more" => {
+                let list = list();
+                if let Some(l) = self.jellyfin.lists.get_mut(&list) {
+                    l.loading = true;
+                }
+                return Effect::Jellyfin(R::More(list));
+            }
+            "jf_retry" => {
+                let list = list();
+                if let Some(l) = self.jellyfin.lists.get_mut(&list) {
+                    l.loading = true;
+                    l.error = None;
+                }
+                return Effect::Jellyfin(R::Load(list));
+            }
+            "jf_play_all" | "jf_shuffle" => {
+                let list = list();
+                Self::go(m, Screen::NowPlaying, "");
+                return Effect::Jellyfin(R::PlayAll {
+                    list,
+                    shuffle: key == "jf_shuffle",
+                });
+            }
+            _ => {}
+        }
+        if let Some(i) = key
+            .strip_prefix("jf_server:")
+            .and_then(|i| i.parse::<usize>().ok())
+        {
+            return Effect::Jellyfin(R::UseServer(i));
+        }
+        if let Some(key) = key.strip_prefix("jf_open:") {
+            let title = match key {
+                "playlists" => "Playlists",
+                "favorites" => "Favorites",
+                "albums" => "Albums",
+                "artists" => "Artists",
+                _ => "Jellyfin",
+            };
+            return self.jellyfin_open(m, key.to_owned(), title);
+        }
+        if let Some((what, id)) = key
+            .strip_prefix("jf_artist:")
+            .and_then(|k| k.split_once(':'))
+        {
+            let artist = service_filter(&m.navigation.filter).1.to_owned();
+            let title = if what == "artist-albums" {
+                format!("{artist}: Albums")
+            } else {
+                format!("{artist}: All Songs")
+            };
+            return self.jellyfin_open(m, format!("{what}:{id}"), &title);
+        }
+        let Some(index) = key
+            .strip_prefix("jf_row:")
+            .and_then(|i| i.parse::<usize>().ok())
+        else {
+            return Effect::None;
+        };
+        let list = list();
+        let Some(row) = self
+            .jellyfin
+            .lists
+            .get(&list)
+            .and_then(|l| l.rows.get(index))
+            .cloned()
+        else {
+            return Effect::None;
+        };
+        match service_list_kind(&list).0 {
+            "playlists" => self.jellyfin_open(m, format!("playlist:{}", row.id), &row.title),
+            "albums" | "artist-albums" => {
+                self.jellyfin_open(m, format!("album:{}", row.id), &row.title)
+            }
+            "artists" => self.jellyfin_open(m, format!("artist:{}", row.id), &row.title),
+            _ => {
+                Self::go(m, Screen::NowPlaying, "");
+                Effect::Jellyfin(R::Play { list, index })
+            }
+        }
+    }
+
     fn spotify_open(&mut self, m: &mut AppModel, key: String, title: &str) -> Effect {
-        let (kind, _) = spotify_list_kind(&key);
+        let (kind, _) = service_list_kind(&key);
         let list = self.spotify.lists.entry(key.clone()).or_default();
         list.title = title.into();
         Self::go(m, Screen::SpotifyList, format!("{key}\u{1f}{title}"));
@@ -2691,14 +2864,14 @@ impl Ui {
                 return Effect::None;
             }
             "spotify_more" => {
-                let list = spotify_filter(&m.navigation.filter).0.to_owned();
+                let list = service_filter(&m.navigation.filter).0.to_owned();
                 if let Some(l) = self.spotify.lists.get_mut(&list) {
                     l.loading = true;
                 }
                 return Effect::Spotify(R::More(list));
             }
             "spotify_retry" => {
-                let list = spotify_filter(&m.navigation.filter).0.to_owned();
+                let list = service_filter(&m.navigation.filter).0.to_owned();
                 if let Some(l) = self.spotify.lists.get_mut(&list) {
                     l.loading = true;
                     l.error = None;
@@ -2706,7 +2879,7 @@ impl Ui {
                 return Effect::Spotify(R::Load(list));
             }
             "spotify_play_all" => {
-                let list = spotify_filter(&m.navigation.filter).0.to_owned();
+                let list = service_filter(&m.navigation.filter).0.to_owned();
                 Self::go(m, Screen::NowPlaying, "");
                 return Effect::Spotify(R::PlayAll(list));
             }
@@ -2727,7 +2900,7 @@ impl Ui {
             .strip_prefix("spotify_artist:")
             .and_then(|k| k.split_once(':'))
         {
-            let artist = spotify_filter(&m.navigation.filter).1.to_owned();
+            let artist = service_filter(&m.navigation.filter).1.to_owned();
             let title = match what {
                 "artist-top-tracks" => format!("{artist}: Top Songs"),
                 "artist-albums" => format!("{artist}: Albums"),
@@ -2741,7 +2914,7 @@ impl Ui {
         else {
             return Effect::None;
         };
-        let list = spotify_filter(&m.navigation.filter).0.to_owned();
+        let list = service_filter(&m.navigation.filter).0.to_owned();
         let Some(row) = self
             .spotify
             .lists
@@ -2751,7 +2924,7 @@ impl Ui {
         else {
             return Effect::None;
         };
-        match spotify_list_kind(&list).0 {
+        match service_list_kind(&list).0 {
             "playlists" => self.spotify_open(m, format!("playlist-tracks:{}", row.id), &row.title),
             "saved-albums" | "artist-albums" => {
                 self.spotify_open(m, format!("album-tracks:{}", row.id), &row.title)
@@ -3517,6 +3690,11 @@ impl Ui {
                 Self::go(m, Screen::Spotify, "");
                 return Effect::None;
             }
+            "jellyfin_page" => {
+                Self::close_modal(m);
+                Self::go(m, Screen::Jellyfin, "");
+                return Effect::None;
+            }
             "bt_forget" => {
                 m.navigation.modal = Some(Modal::Confirm(ConfirmAction::ForgetBluetooth));
                 m.navigation.modal_focus = 0;
@@ -3723,6 +3901,14 @@ impl Ui {
                         let password = std::mem::take(&mut k.text);
                         self.keyboard = None;
                         Effect::LastFm(reborn_core::LastFmRequest::Login { username, password })
+                    }
+                    Purpose::JellyfinServer => {
+                        if text.trim().is_empty() {
+                            self.flash("Type the server's address");
+                            return Effect::None;
+                        }
+                        self.keyboard = None;
+                        Effect::Jellyfin(reborn_core::JellyfinRequest::UseAddress(text))
                     }
                     Purpose::RadioSearch => {
                         if text.chars().count() < 2 {
@@ -4232,6 +4418,7 @@ fn route(key: &str) -> Option<Screen> {
         "radio" => Screen::Radio,
         "lastfm" => Screen::LastFm,
         "spotify" => Screen::Spotify,
+        "jellyfin" => Screen::Jellyfin,
         "error_reports" => Screen::ErrorReports,
         _ => return None,
     })
