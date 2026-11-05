@@ -157,6 +157,9 @@ Code: `crates/reborn-core/src/scrobble.rs` (what counts), `crates/reborn-platfor
 - **Code:** `crates/reborn-platform/src/jellyfin.rs` (discovery, Quick Connect, library requests,
   streams, play reports), `app/reborn/src/jellyfin.rs` (the player's side), `crates/reborn-ui`
   (`JellyfinView`, the pages). Downloads for listening away from the server are planned.
+- **Testing without a server:** `tools/jellyfin-test/run.sh` starts Jellyfin in Docker with a
+  generated test library and runs `crates/reborn-platform/tests/jellyfin_live.rs` against it
+  (sign-in, lists, streams, seeking, reports); CI runs the same (`.github/workflows/jellyfin.yml`).
 
 ## Development
 

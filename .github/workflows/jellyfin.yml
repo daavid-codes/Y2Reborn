@@ -1,0 +1,45 @@
+# Reborn's Jellyfin client against a real Jellyfin server in Docker
+# (tools/jellyfin-test/run.sh): sign-in, lists, streams, seeking, reports.
+name: Jellyfin
+
+on:
+  pull_request:
+    paths:
+      - "crates/reborn-platform/**"
+      - "crates/reborn-core/**"
+      - "crates/reborn-observability/**"
+      - "tools/jellyfin-test/**"
+      - ".github/workflows/jellyfin.yml"
+      - "Cargo.lock"
+  push:
+    branches: [main]
+    paths:
+      - "crates/reborn-platform/**"
+      - "crates/reborn-core/**"
+      - "crates/reborn-observability/**"
+      - "tools/jellyfin-test/**"
+      - ".github/workflows/jellyfin.yml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-server:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg libdbus-1-dev pkg-config
+      - name: Rust (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: actions/cache@v4
+        with:
+          path: target
+          key: jellyfin-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - name: Jellyfin client against a real server
+        run: tools/jellyfin-test/run.sh
