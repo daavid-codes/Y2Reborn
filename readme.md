@@ -41,25 +41,13 @@ through ALSA (wired) or BlueALSA (Bluetooth), and keeps its library in SQLite.
   Nothing is recorded until you opt in; Disconnect and Reset Settings forget the sign-in and its
   waiting plays. Full guide, privacy and security:
   [Last.fm scrobbling](https://github.com/SchulzCode/Y2Linux/blob/main/docs/LASTFM.md).
-- **Spotify** (Home → Spotify, Premium account; ported from
-  [PiPod-OS](https://github.com/daavid-codes/PiPod-OS)): connect by scanning a QR code with your
-  phone (Spotify's device sign-in; no password on the player), then Playlists (including ones you
-  only follow), Liked Songs, Albums and Artists (Top Songs, Albums, All Songs). A song plays within
-  the playlist or album it was chosen from, so Previous/Next stay in it. `spotifyd` streams and
-  Reborn plays its sound through its own output, so the equalizer, volume, Bluetooth and the jack
-  apply as to any song; Now Playing shows the song, its cover and position. The player is also a
-  Spotify Connect device of your account: the phone app can start, pause and skip it. Needs
-  `spotifyd` and `reborn-spotify-metadata` in the Y2Linux image ([how](tools/spotify/README.md));
-  without them Spotify isn't on Home. Not yet tried on a Y2.
-- **Jellyfin** (Home → Jellyfin): your own music server. Servers on the home network are found
-  by themselves, or type an address (an internet address works too). Sign in with Quick Connect:
-  scan a QR code with a phone signed in to Jellyfin and tap Authorize, or enter the six-digit code
-  in a Jellyfin app; no password on the player. Then Playlists, Favorites, Albums and Artists
-  (Albums, All Songs), each with Play All and Shuffle. A list becomes Reborn's own queue, so
-  Previous/Next, shuffle, repeat and seeking work as for songs on the player; songs Reborn can read
-  from a stream (FLAC, MP3, Ogg, Opus, WAV, AAC) arrive untouched, others are converted to MP3 by
-  the server. The server hears what plays (play counts, its dashboard, scrobbling plugins).
-  Quick Connect has to be on in the server's Dashboard › General. Not yet tried on a Y2.
+- **Spotify** (Home → Spotify, Premium account): connect with a QR code on your phone, then
+  Playlists, Liked Songs, Albums and Artists, played through Reborn's own sound path (equalizer,
+  volume, Bluetooth). The player is also a Spotify Connect device. Needs extra programs in the
+  Y2Linux image. See [Spotify](#spotify).
+- **Jellyfin** (Home → Jellyfin): music from your own Jellyfin server, found on the home network
+  or by its address. Sign in with Quick Connect (a QR code), then Playlists, Favorites, Albums and
+  Artists in Reborn's own queue. See [Jellyfin](#jellyfin).
 - Sound and playback: five-band equalizer with presets, headphone profiles (47 common
   headphones and IEMs from AutoEQ built in, more as `ParametricEQ.txt` files in an `EQ` folder; up to 10
   filters with a clip-safe preamp),
@@ -136,30 +124,179 @@ Code: `crates/reborn-core/src/scrobble.rs` (what counts), `crates/reborn-platfor
 
 ## Spotify
 
-- **Sign-in:** OAuth device authorization with the client id librespot uses; the player keeps only
-  the refresh token (`/data/reborn/state/spotify/account.json`, root-only) and spotifyd's own
-  reusable credentials. Disconnect removes both. No token is ever logged.
-- **Pieces:** `crates/reborn-platform/src/spotify.rs` (sign-in, spotifyd as a child process, its
-  sound through a FIFO, MPRIS control on the system bus, the library helper),
-  `app/reborn/src/spotify.rs` (the player's side), `crates/reborn-ui` (`SpotifyView`, the pages),
-  `tools/spotify` (spotifyd patch, D-Bus policy, build notes) and `tools/spotify-metadata` (the
-  library helper, its own workspace).
+Listen to a Spotify **Premium** account on the player. Ported from
+[PiPod-OS](https://github.com/daavid-codes/PiPod-OS). Not yet tried on a Y2.
+
+### What you need
+
+- A Spotify Premium account (Spotify streams to other players only for Premium).
+- Wi-Fi, and the player's clock set (the sign-in checks certificates).
+- A Y2Linux image with `spotifyd` and `reborn-spotify-metadata` installed (see
+  [tools/spotify/README.md](tools/spotify/README.md)). Without them, Spotify isn't on Home and its
+  page says *Spotify Isn't Installed*.
+
+### Connecting
+
+1. Home → **Spotify** → **Connect with Your Phone**.
+2. The player shows a QR code. Scan it with your phone's camera, or go to `spotify.com/pair` on
+   any device and type the code shown under it.
+3. Approve Y2Reborn in Spotify's page. The player continues by itself.
+
+No password is typed on the player. The sign-in lasts until you choose **Disconnect** on the
+Spotify page.
+
+### Using it
+
+- **Library:** Playlists (the ones you made and the ones you follow), Liked Songs, Albums and
+  Artists. An artist opens Top Songs, Albums and All Songs. Long lists end in **More**.
+- **Playing:** choose a song and it plays within the playlist or album it came from, so Previous
+  and Next stay there. Playlists, albums and Liked Songs also have **Play All**.
+- **Controls:** Play/Pause, Previous and Next work as usual. Holding Previous/Next, or the wheel
+  when Customize → Now Playing Wheel is *Seek*, moves 10 seconds at a time. The volume, equalizer,
+  headphone profile, Bluetooth and the jack all apply, because the sound plays through Reborn.
+- **Now Playing:** the song, its cover and position, a green **SPOTIFY** label with the playlist
+  or album, and *SPOTIFY · 320 KBPS*. Hold Select for **Spotify** (back to the page),
+  **Sleep Timer** and **Stop Spotify**.
+- **Spotify Connect:** once Spotify has started on the player, it is listed as *Y2Reborn* among
+  your account's devices. The phone app can start, pause and skip it; the player follows within
+  about two seconds. Starting music on the player pauses Spotify, and the other way round.
+
+### What the player keeps
+
+Everything is in `/data/reborn/state/spotify/` (root-only, not reachable over USB, never in
+logs, diagnostics or update images):
+
+- `account.json`: Spotify's refresh token for this player.
+- `cache/`: spotifyd's own reusable credentials. Songs are never stored (no audio cache).
+- `spotifyd.conf` and `audio.pcm` (the pipe the sound travels through), recreated each start.
+
+**Disconnect** removes the sign-in and spotifyd's credentials. Your Spotify password is only ever
+typed into Spotify's own page.
+
+### Limits
+
+- Reborn's Last.fm scrobbling doesn't count Spotify songs; connect Spotify in your Last.fm
+  settings instead.
+- No search, and Spotify's own shuffle and repeat aren't on the player yet.
+- Spotify starts the first time you open its page after switching on (a few seconds of
+  *Starting Spotify…*).
+
+### If something goes wrong
+
+- *Spotify can't be reached. Check Wi-Fi.*: the player is offline or Spotify didn't answer.
+- *Spotify needs you to connect again.*: the sign-in was revoked or expired; connect again.
+- *Couldn't Load This List*: choose **Try Again**; the library helper didn't answer.
+- If spotifyd stops, the player starts it again by itself (after 5 s, waiting longer each time,
+  up to 5 min).
+- Logs use the subsystem `spotify` (no token is ever logged).
+
+### How it works (developers)
+
+- **Sign-in:** OAuth 2.0 device authorization (RFC 8628) with the client id librespot uses. The
+  access token is written where spotifyd and the library helper start from; both turn it into
+  reusable credentials of their own.
+- **Playback:** spotifyd runs as Reborn's child process with the `pipe` backend into a FIFO. A
+  pump thread hands its PCM to Reborn's decoder as a streamed WAV, and stops reading while no
+  decoder listens, so spotifyd waits. spotifyd is controlled over MPRIS (and its patched
+  `rs.spotifyd.Controls.PlayContextTrack`) on the system bus.
+- **Library:** `reborn-spotify-metadata` (housecat, Spotify's own client protocol) prints one JSON
+  list per call.
+- **Code:** `crates/reborn-platform/src/spotify.rs` (sign-in, spotifyd, the pump, MPRIS, the
+  helper), `app/reborn/src/spotify.rs` (the player's side), `crates/reborn-ui` (`SpotifyView`,
+  the pages), `tools/spotify` (spotifyd patch, D-Bus policy, build notes) and
+  `tools/spotify-metadata` (the helper, its own Cargo workspace).
 
 ## Jellyfin
 
-- **Sign-in:** Jellyfin Quick Connect (`/QuickConnect/Initiate`, approval on the server's own
-  `/web/#/quickconnect?code=…` page, then `/Users/AuthenticateWithQuickConnect`). The player keeps
-  the server address and its access token in one root-only file,
-  `/data/reborn/state/jellyfin/account.json`; it lasts until revoked in Dashboard › Devices or with
-  Disconnect. The token goes to curl on its standard input, never on a command line or in logs.
-- **Streaming:** `/Audio/{id}/universal` from the start of a song, `/Audio/{id}/stream.mp3` with
-  `startTimeTicks` after a seek; `curl` receives it and Reborn's decoder plays it from the pipe.
-- **Code:** `crates/reborn-platform/src/jellyfin.rs` (discovery, Quick Connect, library requests,
-  streams, play reports), `app/reborn/src/jellyfin.rs` (the player's side), `crates/reborn-ui`
-  (`JellyfinView`, the pages). Downloads for listening away from the server are planned.
+Listen to music from your own [Jellyfin](https://jellyfin.org) server. Tested against
+Jellyfin 10.11.0; not yet tried on a Y2.
+
+### What you need
+
+- A Jellyfin server with a music library (tested with 10.11.0).
+- **Quick Connect** switched on: Dashboard → General → Quick Connect (on by default).
+- The player on the same network as the server, or the server reachable by an address (a
+  reverse proxy or a VPN). A server at home needs no internet, only Wi-Fi.
+
+### Connecting
+
+1. Home → **Jellyfin**. Servers on the home network are listed by themselves (choose
+   **Search Again** to look once more). For any other server choose **Enter Address…** and type
+   it, for example `192.168.1.20:8096`, `jellyfin.local` or `https://music.example.org`. A bare
+   name or address gets `http://` and Jellyfin's port 8096.
+2. Choosing a server starts the sign-in: the player shows a QR code and a six-digit code.
+3. Scan the QR code with a phone already signed in to Jellyfin in its browser and tap
+   **Authorize**. Or open **Quick Connect** in Jellyfin's user menu (web or app) and enter the
+   code. The player continues by itself.
+
+No password is typed on the player. The sign-in lasts until you choose **Disconnect**, or remove
+the device *Innioasis Y2* (app *Y2Reborn*) in the server's Dashboard → Devices. **Change Server** forgets the server
+and its sign-in.
+
+### Using it
+
+- **Library:** Playlists, Favorites (songs you marked in Jellyfin), Albums and Artists. An artist
+  opens Albums and All Songs. Long lists end in **More**.
+- **Playing:** choose a song and the rest of its list follows; **Play All** and **Shuffle** start a
+  whole list. The list becomes Reborn's own queue: Previous/Next, Shuffle, Repeat, seeking, Up Next
+  and the sleep timer work as for songs on the player.
+- **Sound:** FLAC, MP3, Ogg, Opus, WAV and AAC arrive as they are (lossless stays lossless). Other
+  formats (M4A/ALAC, WMA and others) are converted to MP3 by the server, and so is a song after a
+  seek (at 320 kbit/s, from that point on).
+- **Now Playing:** the song, the album's cover from the server, a purple **JELLYFIN** label with
+  the list's name, and the format (*JELLYFIN · FLAC*). Hold Select for Up Next, Sleep Timer,
+  Shuffle, Repeat and **Jellyfin** (back to the page).
+- **Your server knows:** play counts, "last played" and the dashboard's *Now Playing* follow what
+  the player plays, and the server's scrobbling plugins (Last.fm, ListenBrainz) see it.
+
+### What the player keeps
+
+`/data/reborn/state/jellyfin/account.json` (root-only, not reachable over USB, never in logs,
+diagnostics or update images): the server's address and name, your user name, the access token
+and this player's device id. The token is passed to `curl` on its standard input, never on a
+command line. Use an `https://` address for a server reached over the internet: with `http://`
+the token travels unencrypted.
+
+### Limits
+
+- Downloads for listening away from the server are planned, not there yet.
+- No search yet.
+- Reborn's own Last.fm scrobbling doesn't count Jellyfin songs; use the server's plugins.
+- Servers are only found on the same network: not across subnets or VLANs, and not when the
+  server runs in Docker without host networking (or UDP port 7359 published). Type the address.
+- Gapless playback between streamed songs is still to be checked on a Y2.
+
+### If something goes wrong
+
+- *No server answered on this network*: see Limits above, or enter the address.
+- *That doesn't look like a Jellyfin server*: check the address and port.
+- *Quick Connect is off on this server*: switch it on under Dashboard → General.
+- *The code expired*: choose **Sign In with Quick Connect** for a new one (codes last a few
+  minutes).
+- *Jellyfin needs you to sign in again*: the device was removed on the server; sign in again.
+- *The Jellyfin server can't be reached*: the server is off, or the player is on another network.
+- Logs use the subsystem `jellyfin` (no token is ever logged).
+
+### How it works (developers)
+
+- **Discovery:** a UDP broadcast, *Who is JellyfinServer?*, to port 7359.
+- **Sign-in:** `POST /QuickConnect/Initiate`, the approval page `/web/#/quickconnect?code=…`,
+  `GET /QuickConnect/Connect` every 3 s, then `POST /Users/AuthenticateWithQuickConnect`.
+- **Library:** `/Items` (with `userId`), `/Playlists/{id}/Items` and `/Artists/AlbumArtists`, 200
+  items a page.
+- **Streaming:** `/Audio/{id}/universal` from the start of a song (direct when Reborn reads the
+  format from a pipe, else MP3), `/Audio/{id}/stream.mp3?static=false&startTimeTicks=…` after a
+  seek. `curl` receives it and Reborn's decoder reads the pipe; the decoder is told where the
+  stream starts in the song. Play reports go to `/Sessions/Playing`, `…/Progress` and
+  `…/Stopped`.
+- **Code:** `crates/reborn-platform/src/jellyfin.rs` (discovery, Quick Connect, library, streams,
+  reports), `app/reborn/src/jellyfin.rs` (the player's side), `crates/reborn-ui` (`JellyfinView`,
+  the pages).
 - **Testing without a server:** `tools/jellyfin-test/run.sh` starts Jellyfin in Docker with a
-  generated test library and runs `crates/reborn-platform/tests/jellyfin_live.rs` against it
-  (sign-in, lists, streams, seeking, reports); CI runs the same (`.github/workflows/jellyfin.yml`).
+  generated test library and runs `crates/reborn-platform/tests/jellyfin_live.rs` against it:
+  sign-in, every list, streams in each format, a seek checked by the tone that arrives, play
+  reports. It needs Docker, ffmpeg, curl, python3 and cargo; `KEEP=1` leaves the server running
+  (user `david`, password `test`). CI runs the same test (`.github/workflows/jellyfin.yml`).
 
 ## Development
 
