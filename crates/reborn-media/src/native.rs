@@ -761,6 +761,9 @@ pub struct Decoder {
     _cancel: Cancel,
     pub metadata: Metadata,
     spec: OutputSpec,
+    /// Where in the song the input starts (a stream sent from a later point):
+    /// added to every position read.
+    start_ms: u64,
 }
 pub struct Pcm {
     pub data: Vec<u8>,
@@ -848,6 +851,7 @@ impl Decoder {
             _cancel: cancel,
             spec,
             metadata: Metadata::from_raw(&meta),
+            start_ms: 0,
         })
     }
     pub fn read(&mut self) -> Result<Option<Pcm>, String> {
@@ -873,12 +877,16 @@ impl Decoder {
         data.truncate(n as usize * self.spec.format.bytes_per_frame());
         Ok(Some(Pcm {
             data,
-            position_ms: pos.max(0) as u64,
+            position_ms: pos.max(0) as u64 + self.start_ms,
             packets,
             frames,
             rate: self.spec.rate,
             format: self.spec.format,
         }))
+    }
+    /// The input begins `ms` into the song (a server sent it from there).
+    pub fn starts_at(&mut self, ms: u64) {
+        self.start_ms = ms;
     }
     pub fn seek(&mut self, ms: u64) -> Result<(), String> {
         if ms > i64::MAX as u64 / 1000 {

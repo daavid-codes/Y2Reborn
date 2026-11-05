@@ -156,7 +156,7 @@ impl Ui {
         indices
             .iter()
             .filter_map(|&i| tracks.get(i))
-            .filter(|t| !t.is_live())
+            .filter(|t| !t.is_streamed())
             .map(|t| PlaylistEntry {
                 location: playlist_index::location_for(&t.path, playlist, &roots),
                 info: Some(playlist_index::info_for(t)),

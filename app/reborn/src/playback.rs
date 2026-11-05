@@ -60,19 +60,35 @@ enum Source {
     Radio(#[allow(dead_code)] reborn_platform::radio::Stream),
     /// spotifyd's sound; dropping it detaches (spotifyd keeps running).
     Spotify(#[allow(dead_code)] reborn_platform::spotify::Audio),
+    /// A song from the Jellyfin server; dropping it stops the transfer.
+    Jellyfin(#[allow(dead_code)] reborn_platform::jellyfin::Stream),
 }
 struct BoundDecoder {
     decoder: Decoder,
     _source: Source,
 }
 impl BoundDecoder {
+    /// `start_ms`: where a Jellyfin song starts (the server sends it from
+    /// there); files seek after opening instead.
     fn open(
         track: &Track,
         music: &std::path::Path,
         spec: OutputSpec,
         dsp: DspConfig,
         cancel: Cancel,
+        start_ms: u64,
     ) -> Result<Self, String> {
+        if track.is_jellyfin() {
+            let stream = reborn_platform::jellyfin::Stream::open(&track.filename, start_ms)
+                .map_err(|e| format!("Jellyfin could not start: {e}"))?;
+            let mut decoder = Decoder::open_stream(stream.reader(), spec, dsp, cancel)
+                .map_err(|e| format!("The Jellyfin song could not be played: {e}"))?;
+            decoder.starts_at(start_ms);
+            return Ok(Self {
+                decoder,
+                _source: Source::Jellyfin(stream),
+            });
+        }
         if track.is_spotify() {
             let audio = reborn_platform::spotify::Audio::attach()
                 .map_err(|e| format!("Spotify could not start: {e}"))?;
@@ -971,6 +987,7 @@ impl Playback {
                         output,
                         job.dsp.clone(),
                         job.cancel.clone(),
+                        job.position,
                     )?;
                     update_media_state(
                         &media_state,
@@ -985,11 +1002,12 @@ impl Playback {
                         dl.add("audio_resamples", 1.);
                     }
                     dl.add("ffmpeg_corrupt_packets", decoder.metadata.corrupt_packets as f64);
-                    // A live station has no position to return to.
-                    if job.position > 0 && !tracks[0].is_live() {
+                    // A live station has no position to return to; a
+                    // Jellyfin song was sent from it already.
+                    if job.position > 0 && !tracks[0].is_streamed() {
                         decoder.seek(job.position)?;
                     }
-                    let artwork = if tracks[0].is_live() {
+                    let artwork = if tracks[0].is_streamed() {
                         None
                     } else {
                         publish_artwork(&cache, &tracks[0], &mut decoder)
@@ -1026,6 +1044,7 @@ impl Playback {
                                 output,
                                 job.dsp.clone(),
                                 job.cancel.clone(),
+                                0,
                             ) {
                                 Ok(next) => {
                                     return Some((candidate, next));
@@ -2318,6 +2337,7 @@ mod tests {
             output,
             DspConfig::default(),
             cancel,
+            0,
         )
         .err()
         .unwrap();
@@ -2379,6 +2399,7 @@ mod tests {
                 spec,
                 DspConfig::default(),
                 Cancel::new().unwrap(),
+                0,
             )
             .unwrap();
             let semantic = |metadata: &reborn_media::Metadata| {
@@ -3714,6 +3735,7 @@ mod tests {
                 spec,
                 DspConfig::with_volume(100),
                 Cancel::new().unwrap(),
+                0,
             )
             .unwrap();
             let (mut frames, mut energy, mut peak) = (0u64, 0f64, 0i32);

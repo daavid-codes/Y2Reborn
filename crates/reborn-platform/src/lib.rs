@@ -8,6 +8,7 @@ pub mod geo;
 pub mod haptics;
 pub mod input;
 pub mod jack;
+pub mod jellyfin;
 pub mod kernel_events;
 pub mod lastfm;
 mod native;

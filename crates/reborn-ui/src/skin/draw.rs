@@ -114,6 +114,7 @@ impl Scene<'_> {
             Flag::HasClock => self.ui.clock(m).is_some(),
             Flag::Live => m.current().is_some_and(Track::is_radio),
             Flag::Spotify => m.current().is_some_and(Track::is_spotify),
+            Flag::Jellyfin => m.current().is_some_and(Track::is_jellyfin),
             // The song playing is in Favorites (Reborn's own Now Playing heart).
             Flag::Favorite => m
                 .current()

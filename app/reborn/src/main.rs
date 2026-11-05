@@ -4,6 +4,7 @@ mod background;
 mod books;
 mod diagnostics;
 mod graphics_recovery;
+mod jellyfin;
 mod meter;
 mod performance;
 mod playback;
@@ -307,8 +308,10 @@ struct Runtime {
     lastfm: scrobbling::LastFm,
     /// Spotify: sign-in, spotifyd and its lists.
     spotify: spotify::Spotify,
+    /// Jellyfin: the server, the sign-in and its lists.
+    jellyfin: jellyfin::Jellyfin,
     /// The cover of the Spotify song playing: (logo key, address).
-    spotify_cover: Option<(u64, String)>,
+    stream_cover: Option<(u64, String)>,
     /// Station logos: downloads (once per logo) and the logo shown as Now
     /// Playing's picture.
     radio_logos: Option<LogoFetcher>,
@@ -1854,7 +1857,7 @@ impl Runtime {
         let track = self.model.current().cloned().ok_or("queue is empty")?;
         // Local music and Spotify never play at once.
         self.spotify_yield();
-        let radio = track.is_live();
+        let radio = track.is_streamed();
         if !radio && !track.path.is_file() {
             return Err("track source unavailable".into());
         }
@@ -2576,6 +2579,7 @@ impl Runtime {
             Effect::Radio(request) => self.radio(request)?,
             Effect::LastFm(request) => self.lastfm_request(request)?,
             Effect::Spotify(request) => self.spotify_request(request)?,
+            Effect::Jellyfin(request) => self.jellyfin_request(request)?,
             Effect::SetScrobbleLog(on) => {
                 self.model.settings.scrobble_log = on;
                 self.checkpoint();
@@ -4857,7 +4861,8 @@ fn run() -> Result<(), String> {
         clock_trusted: None,
         lastfm: scrobbling::LastFm::load(&root),
         spotify: spotify::Spotify::load(&root),
-        spotify_cover: None,
+        jellyfin: jellyfin::Jellyfin::load(&root),
+        stream_cover: None,
         radio_logos: if headless {
             None
         } else {
@@ -4901,6 +4906,7 @@ fn run() -> Result<(), String> {
         .collect();
     rt.lastfm_view();
     rt.spotify_view();
+    rt.jellyfin_view();
     if !rt.model.settings.theme.is_empty() {
         let id = rt.model.settings.theme.clone();
         // A skin on a missing SD card or a refused skin falls back to Reborn's
@@ -5179,7 +5185,7 @@ fn run() -> Result<(), String> {
                         .now
                         .as_ref()
                         .and_then(|s| Some((s.logo_key()?, s.favicon.clone())))
-                        .or_else(|| rt.spotify_cover.clone())
+                        .or_else(|| rt.stream_cover.clone())
                     {
                         let file = reborn_platform::radio::logo_file(&cache, key);
                         if file.exists() {
@@ -5761,6 +5767,7 @@ fn run() -> Result<(), String> {
         }
         rt.radio_tick();
         rt.spotify_tick();
+        rt.jellyfin_tick();
         rt.lost_peer_tick();
         rt.scrobble_tick();
         rt.note_history();

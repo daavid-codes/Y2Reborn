@@ -323,6 +323,7 @@ fn pinned_music_lists_stand_after_music_on_home() {
             "Genres",
             "Playlists",
             "Radio",
+            "Jellyfin",
             "Search",
             "Settings"
         ]
@@ -362,6 +363,7 @@ fn home_menu_switches_pin_and_unpin_from_customize() {
             "home_pin:folders",
             "home_show:playlists",
             "home_show:radio",
+            "home_show:jellyfin",
             "home_show:search"
         ]
     );
@@ -413,6 +415,7 @@ fn home_places_can_be_hidden_but_now_playing_and_settings_stay() {
         "music",
         "playlists",
         "radio",
+        "jellyfin",
         "search",
         "now_playing",
         "settings",
@@ -420,11 +423,11 @@ fn home_places_can_be_hidden_but_now_playing_and_settings_stay() {
         m.settings.show_on_home(key, false);
     }
     assert_eq!(keys(&m), ["now_playing", "settings"]);
-    assert_eq!(summary(&mut m), "4 hidden");
+    assert_eq!(summary(&mut m), "5 hidden");
     // Pinned lists still stand on Home without Music.
     m.settings.pin_home("albums", true);
     assert_eq!(keys(&m), ["now_playing", "albums", "settings"]);
-    assert_eq!(summary(&mut m), "1 added, 4 hidden");
+    assert_eq!(summary(&mut m), "1 added, 5 hidden");
     let quads = ui.draw(&m, &tracks, false);
     assert_eq!(crate::focus_target_count(&quads), 1);
     // Playlists and Search taken off Home are kept at hand in Music.
@@ -432,7 +435,7 @@ fn home_places_can_be_hidden_but_now_playing_and_settings_stay() {
     m.settings.show_on_home("radio", true);
     m.settings.pin_home("albums", false);
     assert_eq!(keys(&m), ["now_playing", "music", "radio", "settings"]);
-    assert_eq!(summary(&mut m), "Playlists, Search hidden");
+    assert_eq!(summary(&mut m), "3 hidden");
     m.screen = Screen::Music;
     assert_eq!(
         keys(&m),
@@ -456,6 +459,7 @@ fn home_places_can_be_hidden_but_now_playing_and_settings_stay() {
             "music",
             "playlists",
             "radio",
+            "jellyfin",
             "search",
             "settings"
         ]
@@ -473,7 +477,7 @@ fn back_to_home_after_a_home_menu_change_keeps_the_place_focused() {
     select_key(&mut ui, &mut m, "settings");
     select_key(&mut ui, &mut m, "customize");
     select_key(&mut ui, &mut m, "home_menu");
-    // Hide Radio, pin Albums and Songs: Settings moves from 5 to 6.
+    // Hide Radio, pin Albums and Songs: Settings moves from 6 to 7.
     for (key, effect) in [
         (
             "home_show:radio",
@@ -494,7 +498,7 @@ fn back_to_home_after_a_home_menu_change_keeps_the_place_focused() {
     }
     assert_eq!(m.screen, Screen::Home);
     assert_eq!(home(&ui, &m)[m.navigation.focus], "settings");
-    assert_eq!(home(&ui, &m).len(), 7);
+    assert_eq!(home(&ui, &m).len(), 8);
 }
 
 /// The library plus "Momo", three 60-s parts in a Hörbücher folder.
@@ -831,6 +835,7 @@ fn root_is_a_small_music_player_menu() {
             "Music",
             "Playlists",
             "Radio",
+            "Jellyfin",
             "Search",
             "Settings"
         ]

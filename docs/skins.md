@@ -201,7 +201,8 @@ timer runs), `has_status`,
 `has_clock` (the time is known; give the title less room), `live` (a
 station plays: `remaining` and `duration` read LIVE, the `progress` bar is full;
 hide the queue position), `spotify` (Spotify plays: show where the sound comes
-from; `quality` already reads `SPOTIFY · 320 KBPS`), `favorite` (the song playing is in Favorites),
+from; `quality` already reads `SPOTIFY · 320 KBPS`), `jellyfin` (a song from
+a Jellyfin server; `quality` reads `JELLYFIN · FLAC`), `favorite` (the song playing is in Favorites),
 `has_body`, `has_title`, `has_action`, `has_facts`, `interactive`.
 
 Inside list rows: `focused`, `disabled`, `toggle`, `on`, `check`, `checked`,

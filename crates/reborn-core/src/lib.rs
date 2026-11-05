@@ -533,6 +533,8 @@ pub const RADIO_SOURCE: &str = "radio";
 /// `Track::source_id` of Spotify in the queue: one entry stands for whatever
 /// spotifyd plays (its own queue follows the playlist or album chosen).
 pub const SPOTIFY_SOURCE: &str = "spotify";
+/// `Track::source_id` of a song streamed from the listener's Jellyfin server.
+pub const JELLYFIN_SOURCE: &str = "jellyfin";
 impl Track {
     /// An internet radio station: `path` holds the stream address, `filename`
     /// the directory id (if any), `album` a short description.
@@ -548,6 +550,18 @@ impl Track {
     /// gapless pre-opening or scrobbling (Spotify scrobbles itself).
     pub fn is_live(&self) -> bool {
         self.is_radio() || self.is_spotify()
+    }
+    /// A song on the listener's Jellyfin server: `filename` holds its item
+    /// id. Streamed, but a song with a length: it seeks (the server sends it
+    /// from there) and the next one opens ahead for gapless playback.
+    pub fn is_jellyfin(&self) -> bool {
+        self.source_id == JELLYFIN_SOURCE
+    }
+    /// Not a file on the player: never in the library, its history, its
+    /// playlists, audiobooks or Reborn's own scrobbling (the server counts
+    /// Jellyfin's plays), and never "SD card removed".
+    pub fn is_streamed(&self) -> bool {
+        self.is_live() || self.is_jellyfin()
     }
     /// Shown in the music lists, counts and search: available and not part
     /// of an audiobook (books have their own place).
@@ -809,6 +823,35 @@ impl std::fmt::Debug for LastFmRequest {
     }
 }
 
+/// What the Jellyfin screens ask the player for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JellyfinRequest {
+    /// Look for servers on the home network.
+    Discover,
+    /// Use the server found at this index, or the address typed.
+    UseServer(usize),
+    UseAddress(String),
+    /// Forget the server (and the sign-in) to choose another.
+    ChangeServer,
+    /// Start Quick Connect: a QR code to approve on a phone.
+    Connect,
+    Cancel,
+    Disconnect,
+    /// Load a list (its key) for the screen showing it; More: its next page.
+    Load(String),
+    More(String),
+    /// Play row `index` of list `list`, the rest of the list after it.
+    Play {
+        list: String,
+        index: usize,
+    },
+    /// Play a whole list from its start, or shuffled.
+    PlayAll {
+        list: String,
+        shuffle: bool,
+    },
+}
+
 /// What the Spotify screens ask the player for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpotifyRequest {
@@ -816,7 +859,7 @@ pub enum SpotifyRequest {
     Connect,
     Cancel,
     Disconnect,
-    /// Load a list (`SpotifyList::key`) for the screen showing it.
+    /// Load a list (its key) for the screen showing it.
     Load(String),
     /// The next page of a list.
     More(String),
@@ -980,6 +1023,10 @@ pub enum Screen {
     Spotify,
     /// One Spotify list; the navigation filter holds its key.
     SpotifyList,
+    /// Jellyfin: the server, the sign-in, then the library.
+    Jellyfin,
+    /// One Jellyfin list; the navigation filter holds "key\u{1f}title".
+    JellyfinList,
     /// One playlist; the navigation filter holds its file's path.
     Playlist,
     /// About & Updates > Error Reports; filter "info": what is sent, "save":
@@ -1284,11 +1331,12 @@ pub const HOME_PINNABLE: [(&str, &str); 5] = [
 ];
 /// Home's own places that can be taken off Home, in Home's order: (key,
 /// label). Music stands first, the others after the pinned lists.
-pub const HOME_HIDEABLE: [(&str, &str); 5] = [
+pub const HOME_HIDEABLE: [(&str, &str); 6] = [
     ("music", "Music"),
     ("playlists", "Playlists"),
     ("radio", "Radio"),
     ("spotify", "Spotify"),
+    ("jellyfin", "Jellyfin"),
     ("search", "Search"),
 ];
 /// How Albums and Audiobooks show their covers: Customize > Cover Flow.
@@ -1861,6 +1909,7 @@ pub enum Effect {
     Playlist(Box<PlaylistRequest>),
     LastFm(LastFmRequest),
     Spotify(SpotifyRequest),
+    Jellyfin(JellyfinRequest),
     SetScrobbleLog(bool),
     SetLastFmScrobble(bool),
     SetLastFmNowPlaying(bool),
@@ -2215,7 +2264,8 @@ impl AppModel {
             Event::SourceChanged(sources) => {
                 self.sources = sources;
                 if self.current().is_some_and(|t| {
-                    !t.is_live() && !self.sources.iter().any(|s| s.online && s.id == t.source_id)
+                    !t.is_streamed()
+                        && !self.sources.iter().any(|s| s.online && s.id == t.source_id)
                 }) {
                     self.playback = PlaybackState::Paused;
                     self.invalidate();
