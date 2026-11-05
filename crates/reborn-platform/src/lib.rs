@@ -11,6 +11,7 @@ pub mod jack;
 pub mod jellyfin;
 pub mod kernel_events;
 pub mod lastfm;
+pub mod listening;
 mod native;
 pub mod playlists;
 pub mod power;

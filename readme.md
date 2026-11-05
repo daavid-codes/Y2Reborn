@@ -48,6 +48,9 @@ through ALSA (wired) or BlueALSA (Bluetooth), and keeps its library in SQLite.
 - **Jellyfin** (Home → Jellyfin): music from your own Jellyfin server, found on the home network
   or by its address. Sign in with Quick Connect (a QR code), then Playlists, Favorites, Albums and
   Artists in Reborn's own queue. See [Jellyfin](#jellyfin).
+- **Listening stats** (Home → Stats): minutes listened, top artists, albums and songs with their
+  minutes, when you listen and how many days in a row, for this week, month, year or all time,
+  and a recap of each finished year. Kept on the player only. See [Listening stats](#listening-stats).
 - Sound and playback: five-band equalizer with presets, headphone profiles (47 common
   headphones and IEMs from AutoEQ built in, more as `ParametricEQ.txt` files in an `EQ` folder; up to 10
   filters with a clip-safe preamp),
@@ -297,6 +300,48 @@ the token travels unencrypted.
   sign-in, every list, streams in each format, a seek checked by the tone that arrives, play
   reports. It needs Docker, ffmpeg, curl, python3 and cargo; `KEEP=1` leaves the server running
   (user `david`, password `test`). CI runs the same test (`.github/workflows/jellyfin.yml`).
+
+## Listening stats
+
+Home → **Stats** shows what you listen to, like a year-in-review that is always up to date.
+Everything is counted and kept on the player; nothing is sent anywhere.
+
+### What counts
+
+- Songs from the player's library, from Jellyfin and from Spotify. Radio and audiobooks don't.
+- Only time actually heard: pausing, seeking ahead or a stalled stream adds nothing. A song heard
+  for less than 10 seconds (a skip) isn't kept; one heard for 30 seconds or more counts as a play.
+- A song with several artists counts for the first one named.
+
+### Using it
+
+- **Period** steps through This Week (from Monday), This Month, This Year and All Time, in the
+  player's time zone.
+- The top of the page shows the minutes listened, plays and artists, your top artist with its
+  minutes, and days in a row (now, and the longest).
+- **Top Artists**, **Top Albums** and **Top Songs**: the 50 most heard of the period, each with its
+  minutes (and plays). **When You Listen**: minutes by hour of the day.
+- **Your 2025** (one row per finished year): that year's minutes, top artist, song and album,
+  busiest month, plays, days you listened and the longest run of days, with its own rankings.
+- **Keep Listening Stats** pauses the counting (what was kept stays). **Reset Listening Stats**
+  forgets everything, after asking.
+
+Until the player's clock is set (Wi-Fi, or Settings → Display → Date & Time) the page shows
+*Adding Up…*: listens are kept, but which week or month they belong to needs the date.
+
+### What the player keeps
+
+One line per listen in `/data/reborn/state/listening.jsonl` (root-only, not reachable over USB,
+never in diagnostics or update images): when it started, how long it was heard, the song, artist,
+album and where it came from. About 2 MB for a year of daily listening.
+
+### How it works (developers)
+
+`reborn_core::stats` (pure): `Meter` measures each play's heard time as the scrobbling rules do,
+`summarize` adds up a period, `recap_years` lists the finished years. `reborn_platform::listening`
+keeps the file (append-only; a line cut off by power loss is skipped). `app/reborn/src/stats.rs`
+feeds the meter every pass, keeps listens once the clock is trustworthy, and adds the summaries up
+only while a Stats screen is open (again when a listen arrives or the day changes).
 
 ## Development
 

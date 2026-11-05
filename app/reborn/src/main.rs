@@ -13,6 +13,7 @@ mod scrobbling;
 mod skins;
 mod sleep_timer;
 mod spotify;
+mod stats;
 mod volume;
 use reborn_control::{Command, PlaybackAction, Response};
 use reborn_core::platform::{Fact, LowBattery};
@@ -310,6 +311,8 @@ struct Runtime {
     spotify: spotify::Spotify,
     /// Jellyfin: the server, the sign-in and its lists.
     jellyfin: jellyfin::Jellyfin,
+    /// Listening stats: the listens kept and the one being heard.
+    stats: stats::Stats,
     /// The cover of the Spotify song playing: (logo key, address).
     stream_cover: Option<(u64, String)>,
     /// Station logos: downloads (once per logo) and the logo shown as Now
@@ -2588,6 +2591,8 @@ impl Runtime {
                 self.model.settings.lastfm_scrobble = on;
                 self.checkpoint();
             }
+            Effect::SetListeningStats(on) => self.stats_set(on),
+            Effect::ResetStats => self.stats_reset()?,
             Effect::SetLastFmNowPlaying(on) => {
                 self.model.settings.lastfm_now_playing = on;
                 self.checkpoint();
@@ -4862,6 +4867,7 @@ fn run() -> Result<(), String> {
         lastfm: scrobbling::LastFm::load(&root),
         spotify: spotify::Spotify::load(&root),
         jellyfin: jellyfin::Jellyfin::load(&root),
+        stats: stats::Stats::load(&root),
         stream_cover: None,
         radio_logos: if headless {
             None
@@ -5770,6 +5776,7 @@ fn run() -> Result<(), String> {
         rt.jellyfin_tick();
         rt.lost_peer_tick();
         rt.scrobble_tick();
+        rt.stats_tick();
         rt.note_history();
         rt.lastfm_tick();
         let mut bt_lost = false;
@@ -6537,6 +6544,8 @@ fn run() -> Result<(), String> {
             log.emit(Level::Warn, "power", "ack_failed", &error, None, json!({}));
         }
     }
+    // The song playing now counts up to here.
+    rt.stats_finish();
     // Keep the DRM device (and its dark frame) open until the process exits;
     // the platform powers the panel down after the acknowledgement.
     let _keep_scanout = farewell;

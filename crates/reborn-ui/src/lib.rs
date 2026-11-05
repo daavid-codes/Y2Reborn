@@ -378,6 +378,43 @@ pub struct JellyfinView {
     pub song: Option<(String, String)>,
 }
 
+/// Listening stats as the player last added them up.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StatsView {
+    /// The period the Stats page shows (This Week … All Time).
+    pub period: reborn_core::stats::Period,
+    /// Each period's and each recap year's summary.
+    pub summaries:
+        std::collections::HashMap<reborn_core::stats::Period, reborn_core::stats::Summary>,
+    /// Finished years with listening, newest first.
+    pub years: Vec<i32>,
+    /// Listens kept in all.
+    pub listens: usize,
+    /// The summaries are added up (they wait for the clock to be set).
+    pub ready: bool,
+}
+impl StatsView {
+    pub fn summary(
+        &self,
+        period: reborn_core::stats::Period,
+    ) -> Option<&reborn_core::stats::Summary> {
+        self.summaries.get(&period)
+    }
+}
+
+/// What a Stats list key names: (ranking, the period it is for).
+pub fn stats_list(ui: &Ui, filter: &str) -> (String, reborn_core::stats::Period) {
+    match filter.split_once(':') {
+        Some((kind, year)) => (
+            kind.to_owned(),
+            year.parse()
+                .map(reborn_core::stats::Period::Recap)
+                .unwrap_or(ui.stats.period),
+        ),
+        None => (filter.to_owned(), ui.stats.period),
+    }
+}
+
 /// Internet radio lists as the player last received them.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RadioView {
@@ -479,6 +516,7 @@ pub struct Ui {
     pub lastfm: LastFmView,
     pub spotify: SpotifyView,
     pub jellyfin: JellyfinView,
+    pub stats: StatsView,
     pub pairing: Option<String>,
     pub pairing_focus: usize,
     /// The full-screen keyboard, while it is open.
@@ -2702,6 +2740,9 @@ impl Ui {
             }
             Screen::Spotify | Screen::SpotifyList => return self.spotify_select(m, key),
             Screen::Jellyfin | Screen::JellyfinList => return self.jellyfin_select(m, key),
+            Screen::Stats | Screen::StatsList | Screen::StatsRecap => {
+                return self.stats_select(m, key)
+            }
             _ => {}
         }
         Effect::None
@@ -2709,6 +2750,24 @@ impl Ui {
 
     /// Open Spotify list `key` titled `title`; loaded unless it is an
     /// artist's menu (nothing to fetch) or already here.
+    fn stats_select(&mut self, m: &mut AppModel, key: &str) -> Effect {
+        match key {
+            "stats_period" => {
+                self.stats.period = self.stats.period.next();
+                Effect::None
+            }
+            "stats_keep" => Effect::SetListeningStats(!m.settings.listening_stats),
+            k => {
+                if let Some(list) = k.strip_prefix("stats_list:") {
+                    Self::go(m, Screen::StatsList, list);
+                } else if let Some(year) = k.strip_prefix("stats_recap:") {
+                    Self::go(m, Screen::StatsRecap, year);
+                }
+                Effect::None
+            }
+        }
+    }
+
     /// Open Jellyfin list `key` titled `title`, loaded unless it is an
     /// artist's menu or already here.
     fn jellyfin_open(&mut self, m: &mut AppModel, key: String, title: &str) -> Effect {
@@ -3486,6 +3545,7 @@ impl Ui {
                         Effect::Platform(PlatformTask::ReportEnable(key == "confirm"))
                     }
                     ConfirmAction::LoudVolume => Effect::AllowLoudVolume,
+                    ConfirmAction::ResetStats => Effect::ResetStats,
                 }
             }
             Some(Modal::ContextMenu) => self.context_action(m, tracks, &key),
@@ -4419,6 +4479,7 @@ fn route(key: &str) -> Option<Screen> {
         "lastfm" => Screen::LastFm,
         "spotify" => Screen::Spotify,
         "jellyfin" => Screen::Jellyfin,
+        "stats" => Screen::Stats,
         "error_reports" => Screen::ErrorReports,
         _ => return None,
     })
@@ -4468,6 +4529,7 @@ fn confirm_action(name: &str) -> Option<ConfirmAction> {
         "forget_wifi" => ConfirmAction::ForgetAllWifi,
         "forget_bluetooth" => ConfirmAction::ForgetAllBluetooth,
         "clear_cache" => ConfirmAction::ClearCache,
+        "reset_stats" => ConfirmAction::ResetStats,
         "update_apply" | "update_cancel" | "update_rollback" | "storage_benchmark"
         | "library_benchmark" | "internal_setup" | "sd_repair" => {
             ConfirmAction::Platform(platform_task(name))
@@ -4504,6 +4566,7 @@ fn confirm_label(action: ConfirmAction) -> &'static str {
         ConfirmAction::Platform(PlatformTask::ReportNewId) => "New ID",
         ConfirmAction::ReportsQuestion => "Send Reports",
         ConfirmAction::LoudVolume => "Raise Volume",
+        ConfirmAction::ResetStats => "Reset",
         ConfirmAction::Platform(_) => "Run",
     }
 }
@@ -4575,6 +4638,10 @@ fn confirm_copy(action: ConfirmAction) -> (&'static str, &'static str) {
         ConfirmAction::ReportsQuestion => (
             "Help Improve Y2Linux?",
             "If something goes wrong, the player can send a report over Wi-Fi: logs and technical details, never your music, names or accounts. Change it in About & Updates.",
+        ),
+        ConfirmAction::ResetStats => (
+            "Reset Listening Stats?",
+            "Every listen kept for your stats and recaps is forgotten. Your music is not touched.",
         ),
         ConfirmAction::LoudVolume => (
             "Raise the Volume?",
